@@ -19,6 +19,7 @@ from typing import Any, Dict
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from contract.models import (
     DepartmentEvaluationRequest,
@@ -37,6 +38,15 @@ from departments.evaluator import (
 from departments.explanations import generate_explanations
 
 
+class DepartmentFaultStatus(BaseModel):
+    department: DepartmentName
+    mode: FaultMode
+    delay_ms: int = 3000
+    error_code: int = 500
+    error_message: str = "Simulated fault injection"
+    message: str = ""
+
+
 def create_app(department: str | None = None, rule_file: Path | None = None) -> FastAPI:
     name = DepartmentName(department or os.environ.get("DEPARTMENT", "fire"))
     path = rule_file or Path(os.environ.get("RULE_FILE", f"rules/{name.value}.yaml"))
@@ -52,7 +62,14 @@ def create_app(department: str | None = None, rule_file: Path | None = None) -> 
             yield
 
     app = FastAPI(title=f"{name.value.title()} department service", lifespan=lifespan)
-    app.state.fault_mode = FaultControlRequest(department=name, mode=FaultMode.NONE)
+    app.state.fault_mode = DepartmentFaultStatus(
+        department=name,
+        mode=FaultMode.NONE,
+        delay_ms=3000,
+        error_code=500,
+        error_message="Simulated fault injection",
+        message=f"{name.value.title()} department operating normally",
+    )
 
     app.add_middleware(
         CORSMiddleware,
@@ -66,15 +83,41 @@ def create_app(department: str | None = None, rule_file: Path | None = None) -> 
     async def health() -> Dict[str, str]:
         return {"status": "healthy", "department": name.value}
 
-    @app.get("/fault", response_model=FaultControlRequest)
-    async def get_fault():
+    @app.get("/fault", response_model=DepartmentFaultStatus)
+    async def get_fault(department: DepartmentName | None = None) -> DepartmentFaultStatus:
+        if department is not None and department != name:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Query department '{department.value}' does not match service department '{name.value}'",
+            )
         return app.state.fault_mode
 
-    @app.post("/fault", response_model=FaultControlRequest)
-    async def set_fault(req: FaultControlRequest):
-        req.department = name
-        app.state.fault_mode = req
-        return req
+    @app.post("/fault", response_model=DepartmentFaultStatus)
+    async def set_fault(req: FaultControlRequest) -> DepartmentFaultStatus:
+        if req.department is not None and req.department != name:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Target department '{req.department.value}' does not match service department '{name.value}'",
+            )
+        if req.delay_ms < 0:
+            raise HTTPException(
+                status_code=422,
+                detail="delay_ms must be non-negative",
+            )
+        status = DepartmentFaultStatus(
+            department=name,
+            mode=req.mode,
+            delay_ms=req.delay_ms,
+            error_code=req.error_code,
+            error_message=req.error_message,
+            message=(
+                f"{name.value.title()} department operating normally"
+                if req.mode == FaultMode.NONE
+                else f"Fault mode for {name.value} set to {req.mode.value}"
+            ),
+        )
+        app.state.fault_mode = status
+        return status
 
     @app.get("/rules")
     async def rules() -> Dict[str, Any]:
