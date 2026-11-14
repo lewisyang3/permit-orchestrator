@@ -25,7 +25,7 @@ stop: ## Stop containers without removing them; optionally select SERVICE
 	$(COMPOSE) stop $(SERVICE)
 
 start: ## Start existing containers; optionally select SERVICE
-	$(COMPOSE) start --wait $(SERVICE)
+	$(COMPOSE) start $(SERVICE)
 
 restart: ## Restart containers; optionally select SERVICE
 	$(COMPOSE) restart $(SERVICE)

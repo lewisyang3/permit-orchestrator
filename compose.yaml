@@ -7,6 +7,7 @@ x-department: &department
     dockerfile: departments/Dockerfile
   environment: &department-environment
     GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    GEMINI_MODEL: ${GEMINI_MODEL:-}
   command:
     - sh
     - -c

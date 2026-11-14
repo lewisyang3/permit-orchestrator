@@ -24,8 +24,8 @@ def test_each_department_loads_its_own_rules_and_does_not_fake_review(name, coun
             "permit_id": "test-permit", "trace_id": "test-trace",
             "department": name, "attempt": 1, "permit": permit(),
         })
-        assert response.status_code == 501
-        assert response.json()["detail"]["code"] == "EVALUATOR_NOT_IMPLEMENTED"
+        assert response.status_code == 422
+        assert response.json()["detail"]["code"] == "INCOMPLETE_REVIEW"
 
 
 def test_department_refuses_wrong_target_and_rule_pack():

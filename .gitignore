@@ -4,6 +4,10 @@ __pycache__/
 .pytest_cache/
 .DS_Store
 .env
+.env.*
+!.env.example
+.venv/
 *.db
+*.db-*
 node_modules/
 dist/
