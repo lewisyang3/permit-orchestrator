@@ -330,3 +330,107 @@ def test_one_call_switch_and_recovery_done_criterion(fire_client, sample_permit)
     assert r4.status_code == 200
     assert fire_client.post("/evaluate", json=eval_payload).status_code not in (500, 503)
 
+
+@pytest.mark.anyio
+async def test_orchestrator_dispatcher_integration_with_real_department_fault(sample_permit):
+    """
+    Integration test: Orchestrator dispatcher fan-out against real department services.
+    Verifies that when Fire is set to OFFLINE:
+    1. Dispatcher retries Fire 3 times with backoff.
+    2. Fire status ends as ERROR (HTTP 503).
+    3. Consensus rules result in REJECTED with INCOMPLETE_REVIEWS code.
+    4. Recovering Fire to none allows healthy dispatch and consensus.
+    """
+    # Create TestClient instances to trigger FastAPI startup lifespans for all 4 real departments
+    apps = {
+        "zoning": department_app("zoning"),
+        "fire": department_app("fire"),
+        "water": department_app("water"),
+        "structural": department_app("structural"),
+    }
+    test_clients = {name: TestClient(app) for name, app in apps.items()}
+    for tc in test_clients.values():
+        tc.__enter__()
+
+    try:
+        class RealDeptTransport(httpx.AsyncBaseTransport):
+            async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+                host = request.url.host
+                if host not in test_clients:
+                    raise RuntimeError(f"Unknown target host {host}")
+                tc = test_clients[host]
+                method = request.method
+                path = request.url.raw_path.decode("ascii")
+                content = await request.aread()
+
+                if method.upper() == "GET":
+                    resp = tc.get(path)
+                elif method.upper() == "POST":
+                    resp = tc.post(path, content=content, headers=dict(request.headers))
+                else:
+                    resp = tc.request(method, path, content=content)
+
+                return httpx.Response(
+                    status_code=resp.status_code,
+                    content=resp.content,
+                    headers=resp.headers,
+                    request=request,
+                )
+
+        endpoints = {
+            "zoning": "http://zoning/evaluate",
+            "fire": "http://fire/evaluate",
+            "water": "http://water/evaluate",
+            "structural": "http://structural/evaluate",
+        }
+
+        async with httpx.AsyncClient(transport=RealDeptTransport()) as client:
+            # 1. Baseline: Inject OFFLINE into Fire via POST http://fire/fault
+            resp_fault = await client.post("http://fire/fault", json={"mode": "offline"})
+            assert resp_fault.status_code == 200
+            assert resp_fault.json()["mode"] == "offline"
+
+            # 2. Dispatch permit with fast backoff
+            trace_events = []
+            results = await dispatch_permit(
+                permit=sample_permit,
+                trace_id="trc-fault-test",
+                endpoints=endpoints,
+                client=client,
+                backoff_delays=[0.02, 0.04],
+                on_event=lambda ev: trace_events.append(ev),
+            )
+
+            # 3. Assert Fire failed after 3 attempts with ERROR
+            fire_res = results["fire"]
+            assert fire_res.status == DepartmentStatus.ERROR
+            assert fire_res.attempts == 3
+            assert "503" in (fire_res.error_message or "")
+
+            # 4. Assert Consensus rule: INCOMPLETE_REVIEWS -> REJECTED
+            final_dec, dec_code, summary, violations = evaluate_consensus(results)
+            assert final_dec == FinalDecision.REJECTED
+            assert dec_code == DecisionCode.INCOMPLETE_REVIEWS
+            assert "fire" in summary.lower()
+
+            # 5. Clear Fire fault back to none
+            clear_resp = await client.post("http://fire/fault", json={"mode": "none"})
+            assert clear_resp.status_code == 200
+            assert clear_resp.json()["mode"] == "none"
+
+            # 6. Verify evaluate is no longer 503
+            eval_resp = await client.post(
+                "http://fire/evaluate",
+                json={
+                    "permit_id": "pm-clear-001",
+                    "trace_id": "trc-clear",
+                    "department": "fire",
+                    "attempt": 1,
+                    "permit": sample_permit.model_dump(mode="json"),
+                },
+            )
+            assert eval_resp.status_code != 503
+    finally:
+        for tc in test_clients.values():
+            tc.__exit__(None, None, None)
+
