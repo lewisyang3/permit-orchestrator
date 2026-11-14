@@ -24,11 +24,12 @@ x-department: &department
 
 services:
   orchestrator:
+    image: permit-orchestrator:local
     build:
       context: .
-      dockerfile: dev/Dockerfile
+      dockerfile: orchestrator/Dockerfile
     ports:
-      - "127.0.0.1:8000:8000"
+      - "8000:8000"
     environment:
       DATABASE_PATH: /data/permits.db
       ZONING_URL: http://zoning:8001
@@ -55,7 +56,7 @@ services:
 
   zoning:
     <<: *department
-    ports: ["127.0.0.1:8001:8001"]
+    ports: ["8001:8001"]
     environment:
       <<: *department-environment
       DEPARTMENT: zoning
@@ -64,7 +65,7 @@ services:
 
   fire:
     <<: *department
-    ports: ["127.0.0.1:8002:8002"]
+    ports: ["8002:8002"]
     environment:
       <<: *department-environment
       DEPARTMENT: fire
@@ -73,7 +74,7 @@ services:
 
   water:
     <<: *department
-    ports: ["127.0.0.1:8003:8003"]
+    ports: ["8003:8003"]
     environment:
       <<: *department-environment
       DEPARTMENT: water
@@ -82,7 +83,7 @@ services:
 
   structural:
     <<: *department
-    ports: ["127.0.0.1:8004:8004"]
+    ports: ["8004:8004"]
     environment:
       <<: *department-environment
       DEPARTMENT: structural
