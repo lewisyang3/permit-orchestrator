@@ -8,6 +8,11 @@ from orchestrator.handlers.intake import (
     parse_plan_document,
     router as intake_router,
 )
+from orchestrator.handlers.hello import (
+    health,
+    hello,
+    router as hello_router,
+)
 from orchestrator.handlers.stream import (
     get_live_browser_page,
     get_permit_status,
@@ -49,6 +54,9 @@ __all__ = [
     "get_live_browser_page",
     "get_permit_event",
     "get_permit_status",
+    "health",
+    "hello",
+    "hello_router",
     "permit_events",
     "permit_tasks",
     "run_permit_saga",

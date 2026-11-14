@@ -444,3 +444,282 @@ async def test_get_admin_fault_malformed_department_response():
         assert "Invalid JSON response" in data["zoning"]["message"]
         assert data["fire"]["mode"] == "none"
 
+
+
+@pytest.mark.anyio
+async def test_post_admin_fault_by_path_param_success(app_with_stubs):
+    """Verify POST /admin/fault/{department} sets fault and GET /admin/fault/{department} reads it."""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app_with_stubs),
+        base_url="http://test",
+    ) as client:
+        # 1. Set Fire to SLOW via path param without department in body
+        resp = await client.post("/admin/fault/fire", json={"mode": "slow", "delay_ms": 3500})
+        assert resp.status_code == status.HTTP_200_OK
+        data = resp.json()
+        assert data["department"] == "fire"
+        assert data["mode"] == "slow"
+        assert data["delay_ms"] == 3500
+
+        # 2. Set Water to ERROR via path param with matching department in body
+        resp2 = await client.post(
+            "/admin/fault/water",
+            json={
+                "department": "water",
+                "mode": "error",
+                "error_code": 503,
+                "error_message": "Water pressure failure",
+            },
+        )
+        assert resp2.status_code == status.HTTP_200_OK
+        data2 = resp2.json()
+        assert data2["department"] == "water"
+        assert data2["mode"] == "error"
+
+        # 3. GET /admin/fault/{department} for individual departments
+        get_fire = await client.get("/admin/fault/fire")
+        assert get_fire.status_code == status.HTTP_200_OK
+        assert get_fire.json()["department"] == "fire"
+        assert get_fire.json()["mode"] == "slow"
+
+        get_water = await client.get("/admin/fault/water")
+        assert get_water.status_code == status.HTTP_200_OK
+        assert get_water.json()["department"] == "water"
+        assert get_water.json()["mode"] == "error"
+
+        get_zoning = await client.get("/admin/fault/zoning")
+        assert get_zoning.status_code == status.HTTP_200_OK
+        assert get_zoning.json()["department"] == "zoning"
+        assert get_zoning.json()["mode"] == "none"
+
+
+@pytest.mark.anyio
+async def test_post_admin_fault_by_path_param_empty_body(app_with_stubs):
+    """Verify POST /admin/fault/{department} handles empty or omitted body."""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app_with_stubs),
+        base_url="http://test",
+    ) as client:
+        resp = await client.post("/admin/fault/structural", json={})
+        assert resp.status_code == status.HTTP_200_OK
+        data = resp.json()
+        assert data["department"] == "structural"
+        assert data["mode"] == "none"
+
+
+@pytest.mark.anyio
+async def test_post_admin_fault_by_path_param_mismatched_department(app_with_stubs):
+    """Verify POST /admin/fault/{department} returns 422 if body department does not match path."""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app_with_stubs),
+        base_url="http://test",
+    ) as client:
+        resp = await client.post(
+            "/admin/fault/fire",
+            json={"department": "water", "mode": "offline"},
+        )
+        assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert "Department mismatch" in resp.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_post_and_get_admin_fault_unknown_department(app_with_stubs):
+    """Verify 404 is returned when an unknown department name is requested in path."""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app_with_stubs),
+        base_url="http://test",
+    ) as client:
+        # POST unknown department
+        post_resp = await client.post("/admin/fault/health_dept", json={"mode": "slow"})
+        assert post_resp.status_code == status.HTTP_404_NOT_FOUND
+        assert "Unknown department 'health_dept'" in post_resp.json()["detail"]
+
+        # GET unknown department
+        get_resp = await client.get("/admin/fault/health_dept")
+        assert get_resp.status_code == status.HTTP_404_NOT_FOUND
+        assert "Unknown department 'health_dept'" in get_resp.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_admin_fault_reset_all_departments(app_with_stubs):
+    """Verify POST /admin/fault/reset properly resets all 4 departments back to NONE."""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app_with_stubs),
+        base_url="http://test",
+    ) as client:
+        # 1. Inject faults into multiple departments
+        await client.post("/admin/fault/fire", json={"mode": "slow", "delay_ms": 3000})
+        await client.post("/admin/fault/water", json={"mode": "error", "error_code": 500})
+        await client.post("/admin/fault/zoning", json={"mode": "offline"})
+
+        # Confirm faults are active
+        active = await client.get("/admin/fault")
+        assert active.status_code == status.HTTP_200_OK
+        active_data = active.json()
+        assert active_data["fire"]["mode"] == "slow"
+        assert active_data["water"]["mode"] == "error"
+        assert active_data["zoning"]["mode"] == "offline"
+
+        # 2. Call POST /admin/fault/reset
+        reset_resp = await client.post("/admin/fault/reset")
+        assert reset_resp.status_code == status.HTTP_200_OK
+        reset_data = reset_resp.json()
+        admin_resp = AdminFaultResponse.model_validate(reset_data)
+        assert admin_resp.zoning.mode == FaultMode.NONE
+        assert admin_resp.fire.mode == FaultMode.NONE
+        assert admin_resp.water.mode == FaultMode.NONE
+        assert admin_resp.structural.mode == FaultMode.NONE
+
+        # 3. Verify GET /admin/fault reflects reset state across all departments
+        get_all = await client.get("/admin/fault")
+        assert get_all.status_code == status.HTTP_200_OK
+        final_all = AdminFaultResponse.model_validate(get_all.json())
+        assert final_all.zoning.mode == FaultMode.NONE
+        assert final_all.fire.mode == FaultMode.NONE
+        assert final_all.water.mode == FaultMode.NONE
+        assert final_all.structural.mode == FaultMode.NONE
+
+
+@pytest.mark.anyio
+async def test_admin_fault_reset_single_department(app_with_stubs):
+    """Verify POST /admin/fault/{department}/reset resets only the specified department."""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app_with_stubs),
+        base_url="http://test",
+    ) as client:
+        # Set Fire and Structural to faults
+        await client.post("/admin/fault/fire", json={"mode": "slow", "delay_ms": 3000})
+        await client.post("/admin/fault/structural", json={"mode": "offline"})
+
+        # Reset Fire only
+        resp_fire_reset = await client.post("/admin/fault/fire/reset")
+        assert resp_fire_reset.status_code == status.HTTP_200_OK
+        assert resp_fire_reset.json()["mode"] == "none"
+
+        # Fire should now be NONE, Structural still OFFLINE
+        get_fire = await client.get("/admin/fault/fire")
+        assert get_fire.json()["mode"] == "none"
+
+        get_structural = await client.get("/admin/fault/structural")
+        assert get_structural.json()["mode"] == "offline"
+
+
+@pytest.mark.anyio
+async def test_admin_fault_reset_with_offline_department():
+    """Verify POST /admin/fault/reset handles an unreachable department gracefully."""
+    app = FastAPI()
+    app.include_router(admin_router)
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        host = request.url.host
+        if host == "fire":
+            raise httpx.ConnectError("Connection refused to fire")
+        return httpx.Response(200, json={"department": host, "mode": "none"})
+
+    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    app.state.http_client = mock_client
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        resp = await client.post("/admin/fault/reset")
+        assert resp.status_code == status.HTTP_200_OK
+        data = resp.json()
+        assert data["zoning"]["mode"] == "none"
+        assert "Offline / Unreachable" in data["fire"]["message"]
+        assert data["water"]["mode"] == "none"
+
+
+@pytest.mark.anyio
+async def test_post_admin_fault_by_path_upstream_error():
+    """Verify HTTP error propagation when target department service returns an error status."""
+    app = FastAPI()
+    app.include_router(admin_router)
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, text="Internal failure in fire service")
+
+    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    app.state.http_client = mock_client
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        resp = await client.post("/admin/fault/fire", json={"mode": "slow"})
+        assert resp.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert "Department fault injection failed" in resp.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_post_admin_fault_by_path_network_failure():
+    """Verify HTTP 502 Bad Gateway when target department service is unreachable via path route."""
+    app = FastAPI()
+    app.include_router(admin_router)
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("Connection refused")
+
+    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    app.state.http_client = mock_client
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        resp = await client.post("/admin/fault/water", json={"mode": "offline"})
+        assert resp.status_code == status.HTTP_502_BAD_GATEWAY
+        assert "Failed to communicate with department service" in resp.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_get_admin_fault_single_unconfigured_endpoint():
+    """Verify GET /admin/fault/{department} reports unconfigured endpoint when missing from mapping."""
+    app = FastAPI()
+    app.include_router(admin_router)
+    app.state.department_endpoints = {
+        "zoning": "http://zoning:8001",
+        # water missing
+        "fire": "http://fire:8002",
+        "structural": "http://structural:8004",
+    }
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        resp = await client.get("/admin/fault/water")
+        assert resp.status_code == status.HTTP_200_OK
+        data = resp.json()
+        assert data["department"] == "water"
+        assert data["message"] == "Endpoint unconfigured"
+
+
+@pytest.mark.anyio
+async def test_admin_fault_prefix_mounting_path_param(stub_departments):
+    """Verify compatibility of path-parameter routes when admin router is mounted with prefix='/admin'."""
+    app = FastAPI()
+    app.include_router(admin_router, prefix="/admin")
+
+    transport = DepartmentRouterTransport(stub_departments)
+    app.state.http_client = httpx.AsyncClient(transport=transport, timeout=5.0)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # POST /admin/fault/fire
+        post_resp = await client.post("/admin/fault/fire", json={"mode": "slow", "delay_ms": 2500})
+        assert post_resp.status_code == status.HTTP_200_OK
+        assert post_resp.json()["mode"] == "slow"
+
+        # GET /admin/fault/fire
+        get_resp = await client.get("/admin/fault/fire")
+        assert get_resp.status_code == status.HTTP_200_OK
+        assert get_resp.json()["mode"] == "slow"
+
+        # POST /admin/fault/reset
+        reset_resp = await client.post("/admin/fault/reset")
+        assert reset_resp.status_code == status.HTTP_200_OK
+        assert reset_resp.json()["fire"]["mode"] == "none"

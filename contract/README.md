@@ -80,6 +80,10 @@ Each department microservice exposes:
   - Forwards call directly to target department's `POST /fault`.
 - **`GET /admin/fault`**:
   - Returns current fault mode for all 4 departments.
+- **`GET /health`**:
+  - Liveness and readiness probe responding with HTTP 200 `{"status": "healthy"}`.
+- **`GET /hello`**:
+  - Public hello-world endpoint responding with HTTP 200 `{"status": "healthy", "message": "...", "service": "permit-orchestrator", "timestamp": "..."}`.
 
 ---
 
