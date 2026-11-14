@@ -140,6 +140,9 @@ def create_app(department: str | None = None, rule_file: Path | None = None) -> 
                 detail=f"Request department '{request.department.value}' does not match service department '{name.value}'",
             )
 
+        # Time execution using perf_counter() starting before potential simulated sleep
+        start_time = perf_counter()
+
         fc = getattr(app.state, "fault_mode", None)
         if fc:
             if fc.mode == FaultMode.OFFLINE:
@@ -149,8 +152,6 @@ def create_app(department: str | None = None, rule_file: Path | None = None) -> 
             if fc.mode == FaultMode.SLOW:
                 await asyncio.sleep(fc.delay_ms / 1000.0)
 
-        # Time execution using perf_counter().
-        start_time = perf_counter()
         pack = app.state.rule_pack
 
         # Run deterministic evaluation via departments.evaluator.
