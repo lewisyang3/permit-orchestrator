@@ -383,3 +383,64 @@ def test_rejection_without_reasons_provides_fallback_violation():
     assert violations[0]["department"] == "structural"
     assert violations[0]["rule_id"] == "REJECTION"
     assert "Foundation type unsuited" in violations[0]["message"]
+
+
+# ============================================================================
+# Status String Normalization Tests (Case-insensitivity & Untrimmed strings)
+# ============================================================================
+
+
+def test_consensus_case_insensitive_status_strings():
+    """Verify consensus handles case-insensitive status strings in results."""
+    # All approved with lowercase or mixed-case string statuses
+    results_approved = {
+        "zoning": {"status": "approved"},
+        "fire": {"status": "Approved"},
+        "water": {"status": "APPROVED"},
+        "structural": {"status": "approved"},
+    }
+    decision, code, summary, violations = evaluate_consensus(results_approved)
+    assert decision == FinalDecision.APPROVED
+    assert code == DecisionCode.ALL_DEPARTMENTS_APPROVED
+    assert violations == []
+
+    # Rejection with lowercase status string
+    results_rejected = {
+        "zoning": {"status": "approved"},
+        "fire": {"status": "rejected", "reasons": []},
+        "water": {"status": "approved"},
+        "structural": {"status": "approved"},
+    }
+    decision, code, summary, violations = evaluate_consensus(results_rejected)
+    assert decision == FinalDecision.REJECTED
+    assert code == DecisionCode.DEPARTMENT_REJECTIONS
+    assert len(violations) == 1
+    assert violations[0]["department"] == "fire"
+
+
+def test_consensus_untrimmed_status_strings():
+    """Verify consensus handles untrimmed status strings with leading/trailing spaces."""
+    # Untrimmed approved
+    results_untrimmed = {
+        "zoning": {"status": " APPROVED "},
+        "fire": {"status": "  approved  "},
+        "water": {"status": "   APPROVED"},
+        "structural": {"status": "approved   "},
+    }
+    decision, code, summary, violations = evaluate_consensus(results_untrimmed)
+    assert decision == FinalDecision.APPROVED
+    assert code == DecisionCode.ALL_DEPARTMENTS_APPROVED
+    assert violations == []
+
+    # Untrimmed rejected
+    results_untrimmed_rej = {
+        "zoning": {"status": " APPROVED "},
+        "fire": {"status": "  REJECTED  ", "reasons": []},
+        "water": {"status": " APPROVED "},
+        "structural": {"status": " APPROVED "},
+    }
+    decision, code, summary, violations = evaluate_consensus(results_untrimmed_rej)
+    assert decision == FinalDecision.REJECTED
+    assert code == DecisionCode.DEPARTMENT_REJECTIONS
+    assert len(violations) == 1
+    assert violations[0]["department"] == "fire"

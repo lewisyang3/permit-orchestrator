@@ -78,7 +78,7 @@ def get_default_endpoints(overrides: Optional[Dict[str, str]] = None) -> Dict[st
     return endpoints
 
 
-def _emit_trace_event(
+async def _emit_trace_event(
     callback: Optional[Callable[[TraceEvent], Any]],
     event_id: str,
     trace_id: str,
@@ -104,7 +104,7 @@ def _emit_trace_event(
     try:
         res = callback(event)
         if asyncio.iscoroutine(res):
-            asyncio.create_task(res)
+            await res
     except Exception:
         pass
 
@@ -138,7 +138,7 @@ async def dispatch_department(
     span = SPAN_MAP.get(dept_name, SpanId.ORCHESTRATOR)
     started = time.perf_counter()
 
-    _emit_trace_event(
+    await _emit_trace_event(
         on_event,
         event_id=f"evt-{uuid4().hex[:8]}",
         trace_id=trace_id,
@@ -161,7 +161,7 @@ async def dispatch_department(
     for attempt in range(1, max_attempts + 1):
         attempts_made = attempt
 
-        _emit_trace_event(
+        await _emit_trace_event(
             on_event,
             event_id=f"evt-{uuid4().hex[:8]}",
             trace_id=trace_id,
@@ -193,7 +193,7 @@ async def dispatch_department(
             is_timeout = True
             last_status = DepartmentStatus.TIMEOUT
             last_error_message = f"ClientTimeout after {int(timeout_seconds * 1000)}ms"
-            _emit_trace_event(
+            await _emit_trace_event(
                 on_event,
                 event_id=f"evt-{uuid4().hex[:8]}",
                 trace_id=trace_id,
@@ -214,7 +214,7 @@ async def dispatch_department(
             else:
                 # 4xx client errors are non-retryable
                 elapsed_ms = (time.perf_counter() - started) * 1000
-                _emit_trace_event(
+                await _emit_trace_event(
                     on_event,
                     event_id=f"evt-{uuid4().hex[:8]}",
                     trace_id=trace_id,
@@ -227,7 +227,7 @@ async def dispatch_department(
                         "error": f"Department returned HTTP {exc.response.status_code}",
                     },
                 )
-                _emit_trace_event(
+                await _emit_trace_event(
                     on_event,
                     event_id=f"evt-{uuid4().hex[:8]}",
                     trace_id=trace_id,
@@ -250,12 +250,35 @@ async def dispatch_department(
             last_error_message = f"Department connection error: {exc}"
         except Exception as exc:
             elapsed_ms = (time.perf_counter() - started) * 1000
+            error_msg = f"Unexpected error: {exc}"
+            await _emit_trace_event(
+                on_event,
+                event_id=f"evt-{uuid4().hex[:8]}",
+                trace_id=trace_id,
+                permit_id=permit_id,
+                span=span,
+                event_type=TraceEventType.CALL_FAILED,
+                detail={
+                    "attempts_total": attempt,
+                    "final_status": DepartmentStatus.ERROR.value,
+                    "error": error_msg,
+                },
+            )
+            await _emit_trace_event(
+                on_event,
+                event_id=f"evt-{uuid4().hex[:8]}",
+                trace_id=trace_id,
+                permit_id=permit_id,
+                span=span,
+                event_type=TraceEventType.SPAN_COMPLETED,
+                detail={"status": DepartmentStatus.ERROR.value, "duration_ms": elapsed_ms},
+            )
             return DepartmentResultSummary(
                 status=DepartmentStatus.ERROR,
                 attempts=attempt,
                 latency_ms=elapsed_ms,
                 reasons=[],
-                error_message=f"Unexpected error: {exc}",
+                error_message=error_msg,
             )
 
         # Check response if received
@@ -267,7 +290,7 @@ async def dispatch_department(
             elif 400 <= response.status_code < 500:
                 # 4xx client errors are non-retryable
                 elapsed_ms = (time.perf_counter() - started) * 1000
-                _emit_trace_event(
+                await _emit_trace_event(
                     on_event,
                     event_id=f"evt-{uuid4().hex[:8]}",
                     trace_id=trace_id,
@@ -280,7 +303,7 @@ async def dispatch_department(
                         "error": f"Department returned HTTP {response.status_code}",
                     },
                 )
-                _emit_trace_event(
+                await _emit_trace_event(
                     on_event,
                     event_id=f"evt-{uuid4().hex[:8]}",
                     trace_id=trace_id,
@@ -300,10 +323,15 @@ async def dispatch_department(
                 try:
                     data = response.json()
                     eval_resp = DepartmentEvaluationResponse.model_validate(data)
+                    if eval_resp.department != dept_enum or eval_resp.permit_id != permit_id:
+                        raise ValueError(
+                            f"Department response identity mismatch: expected ({dept_enum.value}, {permit_id}), "
+                            f"got ({eval_resp.department.value}, {eval_resp.permit_id})"
+                        )
                     if eval_resp.status in (DepartmentStatus.APPROVED, DepartmentStatus.REJECTED):
                         elapsed_ms = (time.perf_counter() - started) * 1000
                         call_duration_ms = (time.perf_counter() - call_started) * 1000
-                        _emit_trace_event(
+                        await _emit_trace_event(
                             on_event,
                             event_id=f"evt-{uuid4().hex[:8]}",
                             trace_id=trace_id,
@@ -316,7 +344,7 @@ async def dispatch_department(
                                 "latency_ms": round(call_duration_ms, 2),
                             },
                         )
-                        _emit_trace_event(
+                        await _emit_trace_event(
                             on_event,
                             event_id=f"evt-{uuid4().hex[:8]}",
                             trace_id=trace_id,
@@ -337,21 +365,67 @@ async def dispatch_department(
                         )
                     else:
                         elapsed_ms = (time.perf_counter() - started) * 1000
+                        error_msg = f"Department returned nonterminal status: {eval_resp.status}"
+                        await _emit_trace_event(
+                            on_event,
+                            event_id=f"evt-{uuid4().hex[:8]}",
+                            trace_id=trace_id,
+                            permit_id=permit_id,
+                            span=span,
+                            event_type=TraceEventType.CALL_FAILED,
+                            detail={
+                                "attempts_total": attempt,
+                                "final_status": DepartmentStatus.ERROR.value,
+                                "error": error_msg,
+                            },
+                        )
+                        await _emit_trace_event(
+                            on_event,
+                            event_id=f"evt-{uuid4().hex[:8]}",
+                            trace_id=trace_id,
+                            permit_id=permit_id,
+                            span=span,
+                            event_type=TraceEventType.SPAN_COMPLETED,
+                            detail={"status": DepartmentStatus.ERROR.value, "duration_ms": elapsed_ms},
+                        )
                         return DepartmentResultSummary(
                             status=DepartmentStatus.ERROR,
                             attempts=attempt,
                             latency_ms=elapsed_ms,
                             reasons=[],
-                            error_message=f"Department returned nonterminal status: {eval_resp.status}",
+                            error_message=error_msg,
                         )
                 except Exception as exc:
                     elapsed_ms = (time.perf_counter() - started) * 1000
+                    error_msg = f"Invalid response schema: {exc}"
+                    await _emit_trace_event(
+                        on_event,
+                        event_id=f"evt-{uuid4().hex[:8]}",
+                        trace_id=trace_id,
+                        permit_id=permit_id,
+                        span=span,
+                        event_type=TraceEventType.CALL_FAILED,
+                        detail={
+                            "attempts_total": attempt,
+                            "final_status": DepartmentStatus.ERROR.value,
+                            "error": error_msg,
+                        },
+                    )
+                    await _emit_trace_event(
+                        on_event,
+                        event_id=f"evt-{uuid4().hex[:8]}",
+                        trace_id=trace_id,
+                        permit_id=permit_id,
+                        span=span,
+                        event_type=TraceEventType.SPAN_COMPLETED,
+                        detail={"status": DepartmentStatus.ERROR.value, "duration_ms": elapsed_ms},
+                    )
                     return DepartmentResultSummary(
                         status=DepartmentStatus.ERROR,
                         attempts=attempt,
                         latency_ms=elapsed_ms,
                         reasons=[],
-                        error_message=f"Invalid response schema: {exc}",
+                        error_message=error_msg,
                     )
 
         # Retry logic for timeout or 5xx
@@ -359,7 +433,7 @@ async def dispatch_department(
             if attempt < max_attempts:
                 delay_index = attempt - 1
                 backoff_s = delays[delay_index] if delay_index < len(delays) else delays[-1]
-                _emit_trace_event(
+                await _emit_trace_event(
                     on_event,
                     event_id=f"evt-{uuid4().hex[:8]}",
                     trace_id=trace_id,
@@ -386,7 +460,7 @@ async def dispatch_department(
         else "Retries exhausted"
     )
 
-    _emit_trace_event(
+    await _emit_trace_event(
         on_event,
         event_id=f"evt-{uuid4().hex[:8]}",
         trace_id=trace_id,
@@ -399,7 +473,7 @@ async def dispatch_department(
             "error": final_error,
         },
     )
-    _emit_trace_event(
+    await _emit_trace_event(
         on_event,
         event_id=f"evt-{uuid4().hex[:8]}",
         trace_id=trace_id,

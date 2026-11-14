@@ -481,3 +481,181 @@ def test_dispatcher_class_interface():
         assert all(r.status == DepartmentStatus.APPROVED for r in results.values())
 
     asyncio.run(_test())
+
+
+def test_response_identity_mismatch_department_and_permit():
+    """Verify department or permit_id mismatch returns ERROR, closes span with CALL_FAILED and SPAN_COMPLETED."""
+    async def _test():
+        permit = load_sample_permit()
+        events_dept: List[TraceEvent] = []
+        events_permit: List[TraceEvent] = []
+
+        # 1. Department mismatch
+        def dept_mismatch_handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json=make_eval_response(permit.permit_id or "p1", "fire", DepartmentStatus.APPROVED),
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(dept_mismatch_handler)) as client:
+            summary = await dispatch_department(
+                dept_name="zoning",
+                endpoint_url="http://zoning:8001/evaluate",
+                permit=permit,
+                permit_id=permit.permit_id or "p1",
+                trace_id="t-id-mismatch-1",
+                client=client,
+                max_attempts=1,
+                on_event=events_dept.append,
+            )
+
+        assert summary.status == DepartmentStatus.ERROR
+        assert "Department response identity mismatch" in (summary.error_message or "")
+        dept_event_types = [e.type for e in events_dept]
+        assert TraceEventType.CALL_FAILED in dept_event_types
+        assert TraceEventType.SPAN_COMPLETED in dept_event_types
+        fail_evt = next(e for e in events_dept if e.type == TraceEventType.CALL_FAILED)
+        span_evt = next(e for e in events_dept if e.type == TraceEventType.SPAN_COMPLETED)
+        assert fail_evt.detail.get("final_status") == DepartmentStatus.ERROR.value
+        assert span_evt.detail.get("status") == DepartmentStatus.ERROR.value
+
+        # 2. Permit ID mismatch
+        def permit_mismatch_handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json=make_eval_response("wrong-permit-id", "zoning", DepartmentStatus.APPROVED),
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(permit_mismatch_handler)) as client:
+            summary = await dispatch_department(
+                dept_name="zoning",
+                endpoint_url="http://zoning:8001/evaluate",
+                permit=permit,
+                permit_id=permit.permit_id or "p1",
+                trace_id="t-id-mismatch-2",
+                client=client,
+                max_attempts=1,
+                on_event=events_permit.append,
+            )
+
+        assert summary.status == DepartmentStatus.ERROR
+        assert "Department response identity mismatch" in (summary.error_message or "")
+        permit_event_types = [e.type for e in events_permit]
+        assert TraceEventType.CALL_FAILED in permit_event_types
+        assert TraceEventType.SPAN_COMPLETED in permit_event_types
+        fail_evt2 = next(e for e in events_permit if e.type == TraceEventType.CALL_FAILED)
+        span_evt2 = next(e for e in events_permit if e.type == TraceEventType.SPAN_COMPLETED)
+        assert fail_evt2.detail.get("final_status") == DepartmentStatus.ERROR.value
+        assert span_evt2.detail.get("status") == DepartmentStatus.ERROR.value
+
+    asyncio.run(_test())
+
+
+def test_nonterminal_status_emits_call_failed_and_span_completed():
+    """Verify nonterminal status (e.g. PENDING) returns ERROR and emits CALL_FAILED and SPAN_COMPLETED."""
+    async def _test():
+        permit = load_sample_permit()
+        events: List[TraceEvent] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json=make_eval_response(permit.permit_id or "p1", "zoning", DepartmentStatus.PENDING),
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            summary = await dispatch_department(
+                dept_name="zoning",
+                endpoint_url="http://zoning:8001/evaluate",
+                permit=permit,
+                permit_id=permit.permit_id or "p1",
+                trace_id="t-nonterminal",
+                client=client,
+                max_attempts=1,
+                on_event=events.append,
+            )
+
+        assert summary.status == DepartmentStatus.ERROR
+        assert "nonterminal status" in (summary.error_message or "")
+        event_types = [e.type for e in events]
+        assert TraceEventType.CALL_FAILED in event_types
+        assert TraceEventType.SPAN_COMPLETED in event_types
+        fail_evt = next(e for e in events if e.type == TraceEventType.CALL_FAILED)
+        span_evt = next(e for e in events if e.type == TraceEventType.SPAN_COMPLETED)
+        assert fail_evt.detail.get("final_status") == DepartmentStatus.ERROR.value
+        assert span_evt.detail.get("status") == DepartmentStatus.ERROR.value
+
+    asyncio.run(_test())
+
+
+def test_schema_validation_exception_emits_call_failed_and_span_completed():
+    """Verify schema validation exception returns ERROR and emits CALL_FAILED and SPAN_COMPLETED."""
+    async def _test():
+        permit = load_sample_permit()
+        events: List[TraceEvent] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"malformed": "schema", "status": "INVALID"})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            summary = await dispatch_department(
+                dept_name="water",
+                endpoint_url="http://water:8003/evaluate",
+                permit=permit,
+                permit_id=permit.permit_id or "p1",
+                trace_id="t-schema-err",
+                client=client,
+                max_attempts=1,
+                on_event=events.append,
+            )
+
+        assert summary.status == DepartmentStatus.ERROR
+        assert "Invalid response schema" in (summary.error_message or "")
+        event_types = [e.type for e in events]
+        assert TraceEventType.CALL_FAILED in event_types
+        assert TraceEventType.SPAN_COMPLETED in event_types
+        fail_evt = next(e for e in events if e.type == TraceEventType.CALL_FAILED)
+        span_evt = next(e for e in events if e.type == TraceEventType.SPAN_COMPLETED)
+        assert fail_evt.detail.get("final_status") == DepartmentStatus.ERROR.value
+        assert span_evt.detail.get("status") == DepartmentStatus.ERROR.value
+
+
+def test_async_callback_sequential_ordering():
+    """Verify async callback is awaited sequentially and preserves trace event order."""
+    async def _test():
+        permit = load_sample_permit()
+        received_events: List[Tuple[TraceEventType, float]] = []
+
+        async def async_on_event(event: TraceEvent):
+            await asyncio.sleep(0.01)
+            received_events.append((event.type, time.perf_counter()))
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            body = json.loads(request.content)
+            return httpx.Response(200, json=make_eval_response(body["permit_id"], body["department"]))
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            summary = await dispatch_department(
+                dept_name="fire",
+                endpoint_url="http://fire:8002/evaluate",
+                permit=permit,
+                permit_id=permit.permit_id or "p1",
+                trace_id="t-async-order",
+                client=client,
+                max_attempts=1,
+                on_event=async_on_event,
+            )
+
+        assert summary.status == DepartmentStatus.APPROVED
+        event_types = [t for t, _ in received_events]
+        expected_types = [
+            TraceEventType.SPAN_STARTED,
+            TraceEventType.CALL_DISPATCHED,
+            TraceEventType.CALL_SUCCEEDED,
+            TraceEventType.SPAN_COMPLETED,
+        ]
+        assert event_types == expected_types
+        timestamps = [ts for _, ts in received_events]
+        assert timestamps == sorted(timestamps)
+
+    asyncio.run(_test())

@@ -39,7 +39,10 @@ def _extract_status(res: Any) -> Optional[DepartmentStatus]:
         try:
             return DepartmentStatus(status)
         except ValueError:
-            return None
+            try:
+                return DepartmentStatus(status.strip().upper())
+            except ValueError:
+                return None
     if isinstance(status, DepartmentStatus):
         return status
     return None
