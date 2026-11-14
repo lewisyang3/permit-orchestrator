@@ -747,6 +747,21 @@ def evaluate_rule(
             elif matched is False:
                 condition_failed_with_evidence = True
 
+        if condition_failed_with_evidence:
+            return RuleEvaluationResult(
+                rule_id=rule_id,
+                rule_name=rule_name,
+                outcome=EvaluationOutcome.NOT_APPLICABLE,
+                passed=False,
+                sources=sources,
+                evidence_refs=refs,
+                message=(
+                    f"{rule_id} ({rule_name}): NOT_APPLICABLE. Scope/applies_when conditions not met "
+                    "based on project evidence."
+                ),
+                severity=RuleSeverity.INFO,
+            )
+
         # Require evidence before declaring NOT_APPLICABLE
         # If condition facts are missing/unknown, applicability is unknown -> outcome NEEDS_INFORMATION
         if missing_applies_fields:
@@ -762,21 +777,6 @@ def evaluate_rule(
                     f"missing condition fact(s): {', '.join(missing_applies_fields)}."
                 ),
                 severity=RuleSeverity.ADVISORY,
-            )
-
-        if condition_failed_with_evidence:
-            return RuleEvaluationResult(
-                rule_id=rule_id,
-                rule_name=rule_name,
-                outcome=EvaluationOutcome.NOT_APPLICABLE,
-                passed=False,
-                sources=sources,
-                evidence_refs=refs,
-                message=(
-                    f"{rule_id} ({rule_name}): NOT_APPLICABLE. Scope/applies_when conditions not met "
-                    "based on project evidence."
-                ),
-                severity=RuleSeverity.INFO,
             )
 
     # Check for explicit unresolved exceptions / prerequisites flags

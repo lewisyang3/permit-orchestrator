@@ -958,7 +958,8 @@ def test_gemini_success_enriches_reasons_and_preserves_decision(base_permit_dict
     }
 
     def mock_transport_handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.params.get("key") == "mock-test-key"
+        assert request.headers.get("x-goog-api-key") == "mock-test-key"
+        assert "key=" not in str(request.url)
         return httpx.Response(200, json=mock_gemini_payload)
 
     with TestClient(department_app("fire")) as client:
@@ -1235,3 +1236,31 @@ def test_orchestrator_fanout_dispatching_to_real_department_services(tmp_path, b
     finally:
         for c in clients.values():
             c.__exit__(None, None, None)
+
+
+def test_applies_when_conjunction_false_and_unknown_is_not_applicable():
+    """Verify propositional logic conjunction: False AND Unknown == False.
+
+    When one condition is proven false with evidence, the rule is NOT_APPLICABLE,
+    even if another applies_when condition has a missing/unknown fact.
+    """
+    rule = {
+        "rule_id": "TEST-APP-001",
+        "rule_name": "Commercial Occupancy Fire Alarm",
+        "applies_when": [
+            {"field": "project_type", "operator": "eq", "value": "commercial"},
+            {"field": "occupancy_load", "operator": "gte", "value": 50},
+        ],
+        "check": {
+            "field": "fire_alarm_system_provided",
+            "operator": "eq",
+            "value": True,
+        },
+    }
+    # project_type is residential (condition 1 is FALSE with evidence)
+    # occupancy_load is missing (condition 2 is UNKNOWN)
+    # Result must be NOT_APPLICABLE, NOT NEEDS_INFORMATION
+    res = evaluate_rule(rule, {"project_type": "residential"})
+    assert res.outcome == EvaluationOutcome.NOT_APPLICABLE
+    assert res.passed is False
+

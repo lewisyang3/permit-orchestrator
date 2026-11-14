@@ -64,7 +64,8 @@ def normalize_finding(item: Any) -> FindingInfo:
     if isinstance(item, dict):
         rule_id = str(item.get("rule_id", "")).strip()
         rule_name = str(item.get("rule_name") or rule_id).strip()
-        outcome = str(item.get("outcome") or ("PASS" if item.get("passed") else "FAIL")).strip().upper()
+        raw_outcome = item.get("outcome")
+        outcome = str(getattr(raw_outcome, "value", raw_outcome) or ("PASS" if item.get("passed") else "FAIL")).strip().upper()
         passed_val = item.get("passed")
         if passed_val is not None:
             passed = bool(passed_val)
@@ -98,7 +99,8 @@ def normalize_finding(item: Any) -> FindingInfo:
         outcome_val = getattr(item, "outcome", None)
         passed_val = getattr(item, "passed", None)
         if outcome_val:
-            outcome = str(outcome_val).strip().upper()
+            raw_val = getattr(outcome_val, "value", outcome_val)
+            outcome = str(raw_val).strip().upper()
         else:
             outcome = "PASS" if passed_val else "FAIL"
 
@@ -283,7 +285,7 @@ def is_contradictory(outcome: str, passed: bool, text: str) -> bool:
         for m in matches:
             idx = m.start()
             preceding = text_lower[max(0, idx - 16):idx]
-            if not any(neg in preceding for neg in ["not", "never", "without", "doesn't", "does not"]):
+            if not any(neg in preceding for neg in ["not", "no", "never", "without", "doesn't", "does not"]):
                 return True
 
     # If finding is FAIL / passed=False, explanation must not claim it passed or is compliant
@@ -466,12 +468,15 @@ async def _call_gemini_api(
         should_close_client = True
 
     try:
-        # Pass api_key in params, never logged or exposed in error messages
+        # Pass api_key in header, never logged or exposed in error messages/URLs
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key,
+        }
         resp = await client.post(
             url,
-            params={"key": api_key},
             json=payload,
-            headers={"Content-Type": "application/json"},
+            headers=headers,
             timeout=request_timeout,
         )
         resp.raise_for_status()
@@ -534,7 +539,7 @@ async def generate_explanations(
     except Exception as e:
         # Sanitize error to ensure api_key never leaks into logs
         error_type = type(e).__name__
-        logger.warning("Gemini explanation generation failed (%s: %s). Falling back to deterministic messages.", error_type, e)
+        logger.warning("Gemini explanation generation failed (%s). Falling back to deterministic messages.", error_type)
         return fallbacks
 
 

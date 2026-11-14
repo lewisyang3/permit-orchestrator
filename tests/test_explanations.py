@@ -86,7 +86,8 @@ def test_successful_gemini_response(sample_findings, monkeypatch):
     }
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.params.get("key") == "test-fake-key"
+        assert request.headers.get("x-goog-api-key") == "test-fake-key"
+        assert "key=" not in str(request.url)
         assert "models/gemini-2.5-flash:generateContent" in str(request.url)
         return httpx.Response(200, json=gemini_resp_payload)
 
@@ -350,3 +351,47 @@ def test_attach_explanations_mutates_findings(sample_findings, monkeypatch):
     updated = asyncio.run(attach_explanations(sample_findings, department="fire"))
     assert updated[0]["message"] == sample_findings[0]["fallback_message"]
     assert updated[1]["message"] == sample_findings[1]["fallback_message"]
+
+
+def test_normalize_finding_enum_value():
+    from departments.evaluator import EvaluationOutcome, RuleEvaluationResult
+    res = RuleEvaluationResult(
+        rule_id="SJ-Z-101",
+        rule_name="Height Limit",
+        outcome=EvaluationOutcome.PASS,
+        passed=True,
+        sources=["Table 20-90"],
+        evidence_refs=["stories"],
+        message="PASS message",
+        severity=RuleSeverity.INFO,
+        actual_value=25,
+        required_value=30,
+    )
+    info = normalize_finding(res)
+    assert info.outcome == "PASS"
+    assert "EVALUATIONOUTCOME" not in info.outcome
+
+    res_fail = RuleEvaluationResult(
+        rule_id="SJ-Z-102",
+        rule_name="Setback Limit",
+        outcome=EvaluationOutcome.FAIL,
+        passed=False,
+        sources=["Table 20-90"],
+        evidence_refs=["setback_ft"],
+        message="",
+        severity=RuleSeverity.VIOLATION,
+        actual_value=5,
+        required_value=10,
+    )
+    info_fail = normalize_finding(res_fail)
+    assert info_fail.outcome == "FAIL"
+    assert "EVALUATIONOUTCOME" not in info_fail.outcome
+    assert "failed:" in info_fail.fallback_message
+
+
+def test_is_contradictory_no_violation():
+    # Compliant explanations with "no violation" must not trigger false positive contradiction
+    assert not is_contradictory("PASS", True, "No violation was identified in the proposal.")
+    assert not is_contradictory("PASS", True, "Presents no violation of setback standards.")
+    assert not is_contradictory("PASS", True, "There is no violation of height limits.")
+
