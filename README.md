@@ -30,18 +30,24 @@ curl http://localhost:8002/rules
 docker compose logs -f fire
 ```
 
-## Submit a connectivity demo
+## Submit a permit application
 
 ```bash
-curl --fail-with-body -X POST http://localhost:8000/demo/submit \
+curl --fail-with-body -X POST http://localhost:8000/submit \
   -H 'Content-Type: application/json' \
   --data-binary @contract/fixtures/permit_approved.json
 ```
 
-The harness calls all four department `/evaluate` endpoints in parallel with a two-second request timeout, collects responses, and saves the payload and final result in SQLite. It generates a new permit ID on each submission. Read a saved result using the returned ID:
+The orchestrator calls all four department `/evaluate` endpoints in parallel with a two-second request timeout and retries, collects responses, and determines the consensus decision. It returns HTTP 202 Accepted with a `stream_url`. Read the current result using the permit ID:
 
 ```bash
-curl http://localhost:8000/demo/permits/REPLACE_WITH_RETURNED_PERMIT_ID
+curl http://localhost:8000/permits/REPLACE_WITH_PERMIT_ID
+```
+
+Stream live events via Server-Sent Events (SSE):
+
+```bash
+curl -N http://localhost:8000/permits/REPLACE_WITH_PERMIT_ID/stream
 ```
 
 **Expected result today: `REJECTED` with `INCOMPLETE_REVIEWS`.** The department scaffolds load real rule files but return HTTP 501 `EVALUATOR_NOT_IMPLEMENTED`. Their health checks confirm the running service and loaded rules, not completed review capability. The fixture filename does not determine its result.
@@ -66,7 +72,7 @@ Ordinary `down` preserves the volume. `docker compose down --volumes` deletes th
 - Dockerfiles, five-service Compose wiring, non-root processes, health checks, and persistent SQLite storage.
 - A separate development harness for fan-out, response identity validation, fail-safe aggregation, and saving/retrieving demo results.
 
-The harness in `dev/` is not the production T1/T5 orchestrator. It uses `/demo/*`, makes one attempt per department, and does not implement retries, SSE, trace events, fault-control endpoints, or durable in-flight jobs. It persists completed demo requests only. Replace its build entry with Person A's implementation when available; production should use the frozen `/submit` and status/event contract.
+The Compose stack runs the production T1 orchestrator from `orchestrator/` using `orchestrator/Dockerfile`. It uses `/submit`, `/permits/{id}`, and `/permits/{id}/stream`, implementing parallel fan-out, 2.0s timeouts, retries with backoff, fail-safe consensus rules, trace event emission, and admin fault proxying. A separate development harness remains available in `dev/` for isolated testing.
 
 Next for T2: implement Gemini evaluation behind `/evaluate`, ground it in the YAML rules and project evidence, and resolve how missing evidence and partial rule coverage map to the shared contract. The current rules and permit fixtures have known scope/input differences documented in [rules/README.md](rules/README.md). Do not manufacture approvals to make the demo green.
 
