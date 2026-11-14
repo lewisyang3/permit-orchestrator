@@ -1,0 +1,434 @@
+# Sourced San José residential starter checks; see README.md for scope.
+schema_version: "0.2.0"
+rule_set_id: "san-jose-structural-residential-starter"
+version: "0.2.0"
+department: "structural"
+status: "sourced_partial_rule_set"
+scope:
+  jurisdiction: "San José city jurisdiction, California"
+  project_category: "Conventional single-family primary dwellings: new work and affected elements of additions or alterations."
+  code_basis: "2025 California codes as described in city guidance; verify the project uses this code cycle."
+  excluded:
+    - "commercial_or_assembly"
+    - "multifamily"
+    - "ADU_or_JADU"
+    - "SB9_or_other_special_housing_pathway"
+    - "Planned_Development"
+    - "historic_or_alternative_design_pathway"
+  existing_unchanged_elements: "Do not infer a retrofit obligation from these new-work dimensions. Establish the applicable alteration requirements first."
+  on_unsupported_project: "REQUIRES_HUMAN_REVIEW"
+evaluation_policy:
+  instructions: "Determine applicability from evidence, select one requirement case, then compare every check. Cite both the requirement and project evidence in each finding."
+  allow_model_to_invent_thresholds: false
+  outcomes:
+    - "PASS"
+    - "FAIL"
+    - "NOT_APPLICABLE"
+    - "NEEDS_INFORMATION"
+    - "REQUIRES_HUMAN_REVIEW"
+  unknown_applicability: "NEEDS_INFORMATION"
+  unknown_exception: "REQUIRES_HUMAN_REVIEW"
+  no_matching_or_multiple_matching_cases: "REQUIRES_HUMAN_REVIEW"
+  missing_check_field: "NEEDS_INFORMATION"
+  not_applicable_requires_evidence: true
+  empty_collection_is_pass: false
+  coverage: "Individual checks only. Passing these checks does not complete department review."
+  allow_final_department_approval_from_this_pack_alone: false
+  contract_mapping: "Internal unresolved outcomes need a coordinated contract update; never silently convert them to APPROVED or a verified violation."
+input_convention: "Facts are normalized evidence for each relevant object, not new fields already present in contract/models.py. Evaluate all affected objects separately; keep document/page references."
+known_coverage_gaps:
+  - "Project-specific seismic and gravity design"
+  - "Soils and geotechnical design"
+  - "Member sizing and connection capacity"
+  - "Engineered design and alternative anchors"
+  - "Complete CRC exceptions and minimum detailing"
+  - "Inspections and special inspections"
+rules:
+  -
+    rule_id: "SJ-S-101"
+    rule_name: "Sill anchor bolt diameter and embedment"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Check conventional bolt size and embedment."
+    applies_when:
+      -
+        field: "prescriptive_crc_anchor_bolt_path"
+        operator: "eq"
+        value: true
+      -
+        field: "engineered_alternative_anchorage"
+        operator: "eq"
+        value: false
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when: []
+          checks:
+            -
+              field: "bolt_diameter_in"
+              operator: "gte"
+              value: 0.5
+              unit: "in"
+            -
+              field: "bolt_embedment_in"
+              operator: "gte"
+              value: 7
+              unit: "in"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/home/showpublisheddocument/94721/638511967421800000"
+        section: "Foundation Hardware: Mudsill anchors; CRC R403.1.6 / R403.1.6.1"
+        source_type: "city_published_guidance"
+        retrieval: "full_document"
+        checked_on: "2026-11-14"
+        printed_page: 32
+    exceptions_and_limits:
+      - "Conventional CRC sill-anchor details only. Engineered shear schedules, listed alternative anchors, and approved alternative details require their own review."
+      - "Meeting these dimensions does not establish overall structural capacity, load-path adequacy, or connection compliance."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          prescriptive_crc_anchor_bolt_path: true
+          engineered_alternative_anchorage: false
+          bolt_diameter_in: 0.5
+          bolt_embedment_in: 7
+        expected_outcome: "PASS"
+      -
+        facts:
+          prescriptive_crc_anchor_bolt_path: true
+          engineered_alternative_anchorage: false
+          bolt_diameter_in: 0.5
+          bolt_embedment_in: 6.99
+        expected_outcome: "FAIL"
+  -
+    rule_id: "SJ-S-102"
+    rule_name: "Sill anchor bolt spacing"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Select maximum spacing by story count."
+    applies_when:
+      -
+        field: "prescriptive_crc_anchor_bolt_path"
+        operator: "eq"
+        value: true
+      -
+        field: "engineered_alternative_anchorage"
+        operator: "eq"
+        value: false
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when:
+            -
+              field: "stories_count"
+              operator: "lte"
+              value: 2
+          checks:
+            -
+              field: "maximum_bolt_spacing_ft"
+              operator: "lte"
+              value: 6
+              unit: "ft"
+        -
+          when:
+            -
+              field: "stories_count"
+              operator: "gt"
+              value: 2
+          checks:
+            -
+              field: "maximum_bolt_spacing_ft"
+              operator: "lte"
+              value: 4
+              unit: "ft"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/home/showpublisheddocument/94721/638511967421800000"
+        section: "Foundation Hardware: Mudsill anchors; CRC R403.1.6 / R403.1.6.1"
+        source_type: "city_published_guidance"
+        retrieval: "full_document"
+        checked_on: "2026-11-14"
+        printed_page: 32
+    exceptions_and_limits:
+      - "Conventional CRC sill-anchor details only. Engineered shear schedules, listed alternative anchors, and approved alternative details require their own review."
+      - "Meeting these dimensions does not establish overall structural capacity, load-path adequacy, or connection compliance."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          prescriptive_crc_anchor_bolt_path: true
+          engineered_alternative_anchorage: false
+          stories_count: 2
+          maximum_bolt_spacing_ft: 6
+        expected_outcome: "PASS"
+      -
+        facts:
+          prescriptive_crc_anchor_bolt_path: true
+          engineered_alternative_anchorage: false
+          stories_count: 3
+          maximum_bolt_spacing_ft: 6
+        expected_outcome: "FAIL"
+      -
+        facts:
+          prescriptive_crc_anchor_bolt_path: true
+          engineered_alternative_anchorage: false
+          stories_count: 3
+          maximum_bolt_spacing_ft: 4
+        expected_outcome: "PASS"
+  -
+    rule_id: "SJ-S-103"
+    rule_name: "Sill plate bolt count"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Check each plate section separately."
+    applies_when:
+      -
+        field: "prescriptive_crc_anchor_bolt_path"
+        operator: "eq"
+        value: true
+      -
+        field: "engineered_alternative_anchorage"
+        operator: "eq"
+        value: false
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when: []
+          checks:
+            -
+              field: "bolts_per_plate_section"
+              operator: "gte"
+              value: 2
+              unit: "count"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/home/showpublisheddocument/94721/638511967421800000"
+        section: "General Mud sill Bolting; CRC R403.1.6"
+        source_type: "city_published_guidance"
+        retrieval: "full_document"
+        checked_on: "2026-11-14"
+        printed_page: 39
+    exceptions_and_limits:
+      - "Conventional CRC sill-anchor details only. Engineered shear schedules, listed alternative anchors, and approved alternative details require their own review."
+      - "Meeting these dimensions does not establish overall structural capacity, load-path adequacy, or connection compliance."
+      - "Resolve any code exception for short plate sections before applying this baseline."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          prescriptive_crc_anchor_bolt_path: true
+          engineered_alternative_anchorage: false
+          bolts_per_plate_section: 2
+        expected_outcome: "PASS"
+      -
+        facts:
+          prescriptive_crc_anchor_bolt_path: true
+          engineered_alternative_anchorage: false
+          bolts_per_plate_section: 1
+        expected_outcome: "FAIL"
+  -
+    rule_id: "SJ-S-104"
+    rule_name: "Sill anchor end distance"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Check anchor end distances under the CRC path."
+    applies_when:
+      -
+        field: "prescriptive_crc_anchor_bolt_path"
+        operator: "eq"
+        value: true
+      -
+        field: "engineered_alternative_anchorage"
+        operator: "eq"
+        value: false
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when: []
+          checks:
+            -
+              field: "minimum_end_distance_in_bolt_diameters"
+              operator: "gte"
+              value: 7
+              unit: "bolt_diameters"
+            -
+              field: "maximum_distance_from_each_plate_end_to_bolt_in"
+              operator: "lte"
+              value: 12
+              unit: "in"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/home/showpublisheddocument/94721/638511967421800000"
+        section: "Foundation Hardware: Mudsill anchors; CRC R403.1.6 / R403.1.6.1"
+        source_type: "city_published_guidance"
+        retrieval: "full_document"
+        checked_on: "2026-11-14"
+        printed_page: 32
+    exceptions_and_limits:
+      - "Conventional CRC sill-anchor details only. Engineered shear schedules, listed alternative anchors, and approved alternative details require their own review."
+      - "Meeting these dimensions does not establish overall structural capacity, load-path adequacy, or connection compliance."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          prescriptive_crc_anchor_bolt_path: true
+          engineered_alternative_anchorage: false
+          minimum_end_distance_in_bolt_diameters: 7
+          maximum_distance_from_each_plate_end_to_bolt_in: 12
+        expected_outcome: "PASS"
+      -
+        facts:
+          prescriptive_crc_anchor_bolt_path: true
+          engineered_alternative_anchorage: false
+          minimum_end_distance_in_bolt_diameters: 6.9
+          maximum_distance_from_each_plate_end_to_bolt_in: 12
+        expected_outcome: "FAIL"
+  -
+    rule_id: "SJ-S-105"
+    rule_name: "Conventional slab-on-ground thickness"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Check the slab thickness lower bound."
+    applies_when:
+      -
+        field: "conventional_slab_on_ground"
+        operator: "eq"
+        value: true
+      -
+        field: "engineered_slab_design"
+        operator: "eq"
+        value: false
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when: []
+          checks:
+            -
+              field: "slab_thickness_in"
+              operator: "gte"
+              value: 3.5
+              unit: "in"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/home/showpublisheddocument/94721/638511967421800000"
+        section: "Slab-On-Ground with turned-down footing; CRC R506.1"
+        source_type: "city_published_guidance"
+        retrieval: "full_document"
+        checked_on: "2026-11-14"
+        printed_page: 28
+    exceptions_and_limits:
+      - "Structural loads, soil conditions, reinforcement, and approved plans may demand more. Do not use for engineered or post-tensioned slabs."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          conventional_slab_on_ground: true
+          engineered_slab_design: false
+          slab_thickness_in: 3.5
+        expected_outcome: "PASS"
+      -
+        facts:
+          conventional_slab_on_ground: true
+          engineered_slab_design: false
+          slab_thickness_in: 3.49
+        expected_outcome: "FAIL"
+  -
+    rule_id: "SJ-S-106"
+    rule_name: "Conventional T-footing minimum geometry"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Check lower-bound geometry after required sizing is established."
+    applies_when:
+      -
+        field: "conventional_t_footing"
+        operator: "eq"
+        value: true
+      -
+        field: "engineered_footing_design"
+        operator: "eq"
+        value: false
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when: []
+          checks:
+            -
+              field: "footing_width_in"
+              operator: "gte"
+              value: 12
+              unit: "in"
+            -
+              field: "footing_thickness_in"
+              operator: "gte"
+              value: 6
+              unit: "in"
+            -
+              field: "footing_projection_in"
+              operator: "gte"
+              value: 2
+              unit: "in"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/home/showpublisheddocument/94721/638511967421800000"
+        section: "T Footing minimum geometry"
+        source_type: "city_published_guidance"
+        retrieval: "full_document"
+        checked_on: "2026-11-14"
+        printed_page: 27
+    exceptions_and_limits:
+      - "Loads, soil bearing and the applicable footing tables or approved plans may require larger sizes. This check cannot determine the required footing size by itself."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          conventional_t_footing: true
+          engineered_footing_design: false
+          footing_width_in: 12
+          footing_thickness_in: 6
+          footing_projection_in: 2
+        expected_outcome: "PASS"
+      -
+        facts:
+          conventional_t_footing: true
+          engineered_footing_design: false
+          footing_width_in: 11.9
+          footing_thickness_in: 6
+          footing_projection_in: 2
+        expected_outcome: "FAIL"

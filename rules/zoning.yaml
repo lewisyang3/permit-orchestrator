@@ -1,0 +1,553 @@
+# Sourced San José residential starter checks; see README.md for scope.
+schema_version: "0.2.0"
+rule_set_id: "san-jose-zoning-residential-starter"
+version: "0.2.0"
+department: "zoning"
+status: "sourced_partial_rule_set"
+scope:
+  jurisdiction: "San José city jurisdiction, California"
+  project_category: "Conventional single-family primary dwellings: new work and affected elements of additions or alterations."
+  code_basis: "2025 California codes as described in city guidance; verify the project uses this code cycle."
+  excluded:
+    - "commercial_or_assembly"
+    - "multifamily"
+    - "ADU_or_JADU"
+    - "SB9_or_other_special_housing_pathway"
+    - "Planned_Development"
+    - "historic_or_alternative_design_pathway"
+  existing_unchanged_elements: "Do not infer a retrofit obligation from these new-work dimensions. Establish the applicable alteration requirements first."
+  on_unsupported_project: "REQUIRES_HUMAN_REVIEW"
+evaluation_policy:
+  instructions: "Determine applicability from evidence, select one requirement case, then compare every check. Cite both the requirement and project evidence in each finding."
+  allow_model_to_invent_thresholds: false
+  outcomes:
+    - "PASS"
+    - "FAIL"
+    - "NOT_APPLICABLE"
+    - "NEEDS_INFORMATION"
+    - "REQUIRES_HUMAN_REVIEW"
+  unknown_applicability: "NEEDS_INFORMATION"
+  unknown_exception: "REQUIRES_HUMAN_REVIEW"
+  no_matching_or_multiple_matching_cases: "REQUIRES_HUMAN_REVIEW"
+  missing_check_field: "NEEDS_INFORMATION"
+  not_applicable_requires_evidence: true
+  empty_collection_is_pass: false
+  coverage: "Individual checks only. Passing these checks does not complete department review."
+  allow_final_department_approval_from_this_pack_alone: false
+  contract_mapping: "Internal unresolved outcomes need a coordinated contract update; never silently convert them to APPROVED or a verified violation."
+input_convention: "Facts are normalized evidence for each relevant object, not new fields already present in contract/models.py. Evaluate all affected objects separately; keep document/page references."
+known_coverage_gaps:
+  - "Permitted use and General Plan consistency"
+  - "Complete zoning exceptions and overlays"
+  - "Floor-area ratio and permit pathways"
+  - "Lot subdivision standards"
+  - "Site-specific approvals and restrictions"
+rules:
+  -
+    rule_id: "SJ-Z-101"
+    rule_name: "Primary dwelling front setback"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Compare the measured setback with the district baseline after resolving exceptions."
+    applies_when:
+      -
+        field: "zone_code"
+        operator: "in"
+        value:
+          - "R-1-8"
+          - "R-1-5"
+          - "R-1-2"
+          - "R-1-1"
+          - "R-1-RR"
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when:
+            -
+              field: "zone_code"
+              operator: "eq"
+              value: "R-1-8"
+          checks:
+            -
+              field: "front_setback_ft"
+              operator: "gte"
+              value: 20
+              unit: "ft"
+        -
+          when:
+            -
+              field: "zone_code"
+              operator: "eq"
+              value: "R-1-5"
+          checks:
+            -
+              field: "front_setback_ft"
+              operator: "gte"
+              value: 20
+              unit: "ft"
+        -
+          when:
+            -
+              field: "zone_code"
+              operator: "eq"
+              value: "R-1-2"
+          checks:
+            -
+              field: "front_setback_ft"
+              operator: "gte"
+              value: 30
+              unit: "ft"
+        -
+          when:
+            -
+              field: "zone_code"
+              operator: "eq"
+              value: "R-1-1"
+          checks:
+            -
+              field: "front_setback_ft"
+              operator: "gte"
+              value: 30
+              unit: "ft"
+        -
+          when:
+            -
+              field: "zone_code"
+              operator: "eq"
+              value: "R-1-RR"
+          checks:
+            -
+              field: "front_setback_ft"
+              operator: "gte"
+              value: 50
+              unit: "ft"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/home/showpublisheddocument/94721/638511967421800000"
+        section: "Residential Zoning Districts Development Standards; SJMC 20.30.200, Table 20-60"
+        source_type: "city_published_guidance"
+        retrieval: "full_document"
+        checked_on: "2026-11-14"
+        printed_page: 19
+    exceptions_and_limits:
+      - "Baseline primary-building standard only; resolve parcel-specific approvals, nonconforming rights, easements, overlays, and applicable zoning exceptions first."
+      - "Potential exceptions include block-average front setbacks, older narrow/shallow lots, additions, and abutting alleys. A claimed or unknown exception requires review before a violation is declared."
+      - "Generic R-1 is insufficient: identify the actual mapped district. These values do not govern ADUs, SB 9, or PD projects."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          zone_code: "R-1-8"
+          front_setback_ft: 20
+        expected_outcome: "PASS"
+      -
+        facts:
+          zone_code: "R-1-8"
+          front_setback_ft: 19.99
+        expected_outcome: "FAIL"
+  -
+    rule_id: "SJ-Z-102"
+    rule_name: "Primary dwelling side interior setback"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Compare the measured setback with the district baseline after resolving exceptions."
+    applies_when:
+      -
+        field: "zone_code"
+        operator: "in"
+        value:
+          - "R-1-8"
+          - "R-1-5"
+          - "R-1-2"
+          - "R-1-1"
+          - "R-1-RR"
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when:
+            -
+              field: "zone_code"
+              operator: "eq"
+              value: "R-1-8"
+          checks:
+            -
+              field: "interior_side_setback_ft"
+              operator: "gte"
+              value: 5
+              unit: "ft"
+        -
+          when:
+            -
+              field: "zone_code"
+              operator: "eq"
+              value: "R-1-5"
+          checks:
+            -
+              field: "interior_side_setback_ft"
+              operator: "gte"
+              value: 5
+              unit: "ft"
+        -
+          when:
+            -
+              field: "zone_code"
+              operator: "eq"
+              value: "R-1-2"
+          checks:
+            -
+              field: "interior_side_setback_ft"
+              operator: "gte"
+              value: 15
+              unit: "ft"
+        -
+          when:
+            -
+              field: "zone_code"
+              operator: "eq"
+              value: "R-1-1"
+          checks:
+            -
+              field: "interior_side_setback_ft"
+              operator: "gte"
+              value: 20
+              unit: "ft"
+        -
+          when:
+            -
+              field: "zone_code"
+              operator: "eq"
+              value: "R-1-RR"
+          checks:
+            -
+              field: "interior_side_setback_ft"
+              operator: "gte"
+              value: 20
+              unit: "ft"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/home/showpublisheddocument/94721/638511967421800000"
+        section: "Residential Zoning Districts Development Standards; SJMC 20.30.200, Table 20-60"
+        source_type: "city_published_guidance"
+        retrieval: "full_document"
+        checked_on: "2026-11-14"
+        printed_page: 19
+    exceptions_and_limits:
+      - "Baseline primary-building standard only; resolve parcel-specific approvals, nonconforming rights, easements, overlays, and applicable zoning exceptions first."
+      - "Potential exceptions include block-average front setbacks, older narrow/shallow lots, additions, and abutting alleys. A claimed or unknown exception requires review before a violation is declared."
+      - "Generic R-1 is insufficient: identify the actual mapped district. These values do not govern ADUs, SB 9, or PD projects."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          zone_code: "R-1-8"
+          interior_side_setback_ft: 5
+        expected_outcome: "PASS"
+      -
+        facts:
+          zone_code: "R-1-8"
+          interior_side_setback_ft: 4.99
+        expected_outcome: "FAIL"
+  -
+    rule_id: "SJ-Z-103"
+    rule_name: "Primary dwelling side corner setback"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Compare the measured setback with the district baseline after resolving exceptions."
+    applies_when:
+      -
+        field: "zone_code"
+        operator: "in"
+        value:
+          - "R-1-8"
+          - "R-1-5"
+          - "R-1-2"
+          - "R-1-1"
+          - "R-1-RR"
+      -
+        field: "is_corner_lot"
+        operator: "eq"
+        value: true
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when:
+            -
+              field: "zone_code"
+              operator: "eq"
+              value: "R-1-8"
+          checks:
+            -
+              field: "corner_side_setback_ft"
+              operator: "gte"
+              value: 12.5
+              unit: "ft"
+        -
+          when:
+            -
+              field: "zone_code"
+              operator: "eq"
+              value: "R-1-5"
+          checks:
+            -
+              field: "corner_side_setback_ft"
+              operator: "gte"
+              value: 12.5
+              unit: "ft"
+        -
+          when:
+            -
+              field: "zone_code"
+              operator: "eq"
+              value: "R-1-2"
+          checks:
+            -
+              field: "corner_side_setback_ft"
+              operator: "gte"
+              value: 15
+              unit: "ft"
+        -
+          when:
+            -
+              field: "zone_code"
+              operator: "eq"
+              value: "R-1-1"
+          checks:
+            -
+              field: "corner_side_setback_ft"
+              operator: "gte"
+              value: 20
+              unit: "ft"
+        -
+          when:
+            -
+              field: "zone_code"
+              operator: "eq"
+              value: "R-1-RR"
+          checks:
+            -
+              field: "corner_side_setback_ft"
+              operator: "gte"
+              value: 30
+              unit: "ft"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/home/showpublisheddocument/94721/638511967421800000"
+        section: "Residential Zoning Districts Development Standards; SJMC 20.30.200, Table 20-60"
+        source_type: "city_published_guidance"
+        retrieval: "full_document"
+        checked_on: "2026-11-14"
+        printed_page: 19
+    exceptions_and_limits:
+      - "Baseline primary-building standard only; resolve parcel-specific approvals, nonconforming rights, easements, overlays, and applicable zoning exceptions first."
+      - "Potential exceptions include block-average front setbacks, older narrow/shallow lots, additions, and abutting alleys. A claimed or unknown exception requires review before a violation is declared."
+      - "Generic R-1 is insufficient: identify the actual mapped district. These values do not govern ADUs, SB 9, or PD projects."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          zone_code: "R-1-8"
+          corner_side_setback_ft: 12.5
+          is_corner_lot: true
+        expected_outcome: "PASS"
+      -
+        facts:
+          zone_code: "R-1-8"
+          corner_side_setback_ft: 12.49
+          is_corner_lot: true
+        expected_outcome: "FAIL"
+  -
+    rule_id: "SJ-Z-104"
+    rule_name: "Primary dwelling rear setback"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Compare the measured setback with the district baseline after resolving exceptions."
+    applies_when:
+      -
+        field: "zone_code"
+        operator: "in"
+        value:
+          - "R-1-8"
+          - "R-1-5"
+          - "R-1-2"
+          - "R-1-1"
+          - "R-1-RR"
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when:
+            -
+              field: "zone_code"
+              operator: "eq"
+              value: "R-1-8"
+          checks:
+            -
+              field: "rear_setback_ft"
+              operator: "gte"
+              value: 20
+              unit: "ft"
+        -
+          when:
+            -
+              field: "zone_code"
+              operator: "eq"
+              value: "R-1-5"
+          checks:
+            -
+              field: "rear_setback_ft"
+              operator: "gte"
+              value: 20
+              unit: "ft"
+        -
+          when:
+            -
+              field: "zone_code"
+              operator: "eq"
+              value: "R-1-2"
+          checks:
+            -
+              field: "rear_setback_ft"
+              operator: "gte"
+              value: 25
+              unit: "ft"
+        -
+          when:
+            -
+              field: "zone_code"
+              operator: "eq"
+              value: "R-1-1"
+          checks:
+            -
+              field: "rear_setback_ft"
+              operator: "gte"
+              value: 25
+              unit: "ft"
+        -
+          when:
+            -
+              field: "zone_code"
+              operator: "eq"
+              value: "R-1-RR"
+          checks:
+            -
+              field: "rear_setback_ft"
+              operator: "gte"
+              value: 30
+              unit: "ft"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/home/showpublisheddocument/94721/638511967421800000"
+        section: "Residential Zoning Districts Development Standards; SJMC 20.30.200, Table 20-60"
+        source_type: "city_published_guidance"
+        retrieval: "full_document"
+        checked_on: "2026-11-14"
+        printed_page: 19
+    exceptions_and_limits:
+      - "Baseline primary-building standard only; resolve parcel-specific approvals, nonconforming rights, easements, overlays, and applicable zoning exceptions first."
+      - "Potential exceptions include block-average front setbacks, older narrow/shallow lots, additions, and abutting alleys. A claimed or unknown exception requires review before a violation is declared."
+      - "Generic R-1 is insufficient: identify the actual mapped district. These values do not govern ADUs, SB 9, or PD projects."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          zone_code: "R-1-8"
+          rear_setback_ft: 20
+        expected_outcome: "PASS"
+      -
+        facts:
+          zone_code: "R-1-8"
+          rear_setback_ft: 19.99
+        expected_outcome: "FAIL"
+  -
+    rule_id: "SJ-Z-105"
+    rule_name: "Primary dwelling height and stories"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Both height and story limits apply independently."
+    applies_when:
+      -
+        field: "zone_code"
+        operator: "in"
+        value:
+          - "R-1-8"
+          - "R-1-5"
+          - "R-1-2"
+          - "R-1-1"
+          - "R-1-RR"
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when: []
+          checks:
+            -
+              field: "building_height_ft"
+              operator: "lte"
+              value: 35
+              unit: "ft"
+            -
+              field: "stories_count"
+              operator: "lte"
+              value: 2.5
+              unit: "stories"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/home/showpublisheddocument/94721/638511967421800000"
+        section: "Residential Zoning Districts Development Standards; SJMC 20.30.200, Table 20-60"
+        source_type: "city_published_guidance"
+        retrieval: "full_document"
+        checked_on: "2026-11-14"
+        printed_page: 19
+    exceptions_and_limits:
+      - "Baseline primary-building standard only; resolve parcel-specific approvals, nonconforming rights, easements, overlays, and applicable zoning exceptions first."
+      - "Potential exceptions include block-average front setbacks, older narrow/shallow lots, additions, and abutting alleys. A claimed or unknown exception requires review before a violation is declared."
+      - "Generic R-1 is insufficient: identify the actual mapped district. These values do not govern ADUs, SB 9, or PD projects."
+      - "Height measurement, half-story classification, and architectural projections require the city definitions and any applicable exceptions."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          zone_code: "R-1-8"
+          building_height_ft: 35
+          stories_count: 2.5
+        expected_outcome: "PASS"
+      -
+        facts:
+          zone_code: "R-1-8"
+          building_height_ft: 35.01
+          stories_count: 2
+        expected_outcome: "FAIL"
+      -
+        facts:
+          zone_code: "R-1-8"
+          building_height_ft: 30
+          stories_count: 3
+        expected_outcome: "FAIL"

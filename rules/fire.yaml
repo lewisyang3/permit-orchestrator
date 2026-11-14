@@ -1,0 +1,420 @@
+# Sourced San José residential starter checks; see README.md for scope.
+schema_version: "0.2.0"
+rule_set_id: "san-jose-fire-residential-starter"
+version: "0.2.0"
+department: "fire"
+status: "sourced_partial_rule_set"
+scope:
+  jurisdiction: "San José city jurisdiction, California"
+  project_category: "Conventional single-family primary dwellings: new work and affected elements of additions or alterations."
+  code_basis: "2025 California codes as described in city guidance; verify the project uses this code cycle."
+  excluded:
+    - "commercial_or_assembly"
+    - "multifamily"
+    - "ADU_or_JADU"
+    - "SB9_or_other_special_housing_pathway"
+    - "Planned_Development"
+    - "historic_or_alternative_design_pathway"
+  existing_unchanged_elements: "Do not infer a retrofit obligation from these new-work dimensions. Establish the applicable alteration requirements first."
+  on_unsupported_project: "REQUIRES_HUMAN_REVIEW"
+evaluation_policy:
+  instructions: "Determine applicability from evidence, select one requirement case, then compare every check. Cite both the requirement and project evidence in each finding."
+  allow_model_to_invent_thresholds: false
+  outcomes:
+    - "PASS"
+    - "FAIL"
+    - "NOT_APPLICABLE"
+    - "NEEDS_INFORMATION"
+    - "REQUIRES_HUMAN_REVIEW"
+  unknown_applicability: "NEEDS_INFORMATION"
+  unknown_exception: "REQUIRES_HUMAN_REVIEW"
+  no_matching_or_multiple_matching_cases: "REQUIRES_HUMAN_REVIEW"
+  missing_check_field: "NEEDS_INFORMATION"
+  not_applicable_requires_evidence: true
+  empty_collection_is_pass: false
+  coverage: "Individual checks only. Passing these checks does not complete department review."
+  allow_final_department_approval_from_this_pack_alone: false
+  contract_mapping: "Internal unresolved outcomes need a coordinated contract update; never silently convert them to APPROVED or a verified violation."
+input_convention: "Facts are normalized evidence for each relevant object, not new fields already present in contract/models.py. Evaluate all affected objects separately; keep document/page references."
+known_coverage_gaps:
+  - "Commercial exit count and occupant-load tables"
+  - "Sprinkler and alarm installation triggers and design"
+  - "Rated assemblies and fire separation"
+  - "Fire access and fire flow"
+  - "Wildland-urban interface provisions"
+  - "Full emergency-opening applicability and exceptions"
+rules:
+  -
+    rule_id: "SJ-F-101"
+    rule_name: "Required dwelling egress door"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Check the required side-hinged dwelling egress door count."
+    applies_when: []
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when: []
+          checks:
+            -
+              field: "qualifying_side_hinged_egress_doors"
+              operator: "gte"
+              value: 1
+              unit: "count"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/home/showpublisheddocument/94721/638511967421800000"
+        section: "Means of Egress; Egress Door (2025 CRC R318)"
+        source_type: "city_published_guidance"
+        retrieval: "full_document"
+        checked_on: "2026-11-14"
+        printed_page: 128
+    exceptions_and_limits:
+      - "This is a dwelling-door requirement, not a commercial exit-count rule. Emergency escape openings are separate checks."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          qualifying_side_hinged_egress_doors: 1
+        expected_outcome: "PASS"
+      -
+        facts:
+          qualifying_side_hinged_egress_doors: 0
+        expected_outcome: "FAIL"
+  -
+    rule_id: "SJ-F-102"
+    rule_name: "Required egress door clear dimensions"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Measure clear opening, not nominal door size."
+    applies_when: []
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when: []
+          checks:
+            -
+              field: "clear_width_in"
+              operator: "gte"
+              value: 32
+              unit: "in"
+            -
+              field: "clear_height_in"
+              operator: "gte"
+              value: 78
+              unit: "in"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/home/showpublisheddocument/94721/638511967421800000"
+        section: "Means of Egress; Egress Door (2025 CRC R318)"
+        source_type: "city_published_guidance"
+        retrieval: "full_document"
+        checked_on: "2026-11-14"
+        printed_page: 128
+    exceptions_and_limits:
+      - "Measure width with door opened 90 degrees; evaluate the required egress door."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          clear_width_in: 32
+          clear_height_in: 78
+        expected_outcome: "PASS"
+      -
+        facts:
+          clear_width_in: 31.9
+          clear_height_in: 80
+        expected_outcome: "FAIL"
+  -
+    rule_id: "SJ-F-103"
+    rule_name: "Unobstructed dwelling egress route"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Verify the complete route to the required egress door."
+    applies_when: []
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when: []
+          checks:
+            -
+              field: "continuous_unobstructed_route"
+              operator: "eq"
+              value: true
+              unit: "boolean"
+            -
+              field: "passes_through_garage"
+              operator: "eq"
+              value: false
+              unit: "boolean"
+            -
+              field: "discharges_to_public_way_or_connected_yard_court"
+              operator: "eq"
+              value: true
+              unit: "boolean"
+            -
+              field: "openable_inside_without_key_special_knowledge_or_effort"
+              operator: "eq"
+              value: true
+              unit: "boolean"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/home/showpublisheddocument/94721/638511967421800000"
+        section: "Means of Egress; Egress Door (2025 CRC R318)"
+        source_type: "city_published_guidance"
+        retrieval: "full_document"
+        checked_on: "2026-11-14"
+        printed_page: 128
+    exceptions_and_limits:
+      - "Door count alone cannot establish a usable route. Cite the plan path and discharge location."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          continuous_unobstructed_route: true
+          passes_through_garage: false
+          discharges_to_public_way_or_connected_yard_court: true
+          openable_inside_without_key_special_knowledge_or_effort: true
+        expected_outcome: "PASS"
+  -
+    rule_id: "SJ-F-104"
+    rule_name: "Required emergency opening clear dimensions"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Evaluate each opening already determined to be required."
+    applies_when:
+      -
+        field: "emergency_opening_required"
+        operator: "eq"
+        value: true
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when: []
+          checks:
+            -
+              field: "net_clear_width_in"
+              operator: "gte"
+              value: 20
+              unit: "in"
+            -
+              field: "net_clear_height_in"
+              operator: "gte"
+              value: 24
+              unit: "in"
+            -
+              field: "bottom_of_clear_opening_above_floor_in"
+              operator: "lte"
+              value: 44
+              unit: "in"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/businesses/development-services-permit-center/start-your-project/window-replacements"
+        section: "Window size: sleeping rooms and basements"
+        source_type: "city_published_guidance"
+        retrieval: "indexed_official_page_excerpt"
+        checked_on: "2026-11-14"
+      -
+        url: "https://www.sanjoseca.gov/home/showpublisheddocument/94721/638511967421800000"
+        section: "Emergency Escape and Rescue (R319)"
+        source_type: "city_published_guidance"
+        retrieval: "full_document"
+        checked_on: "2026-11-14"
+        printed_page: 93
+    exceptions_and_limits:
+      - "The minimum width and height do not by themselves satisfy the required area. Apply SJ-F-105 as well."
+      - "Determine whether an opening is required and whether an existing-building or replacement exception applies before checking dimensions."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          emergency_opening_required: true
+          net_clear_width_in: 20
+          net_clear_height_in: 24
+          bottom_of_clear_opening_above_floor_in: 44
+        expected_outcome: "PASS"
+      -
+        facts:
+          emergency_opening_required: true
+          net_clear_width_in: 19.9
+          net_clear_height_in: 48
+          bottom_of_clear_opening_above_floor_in: 44
+        expected_outcome: "FAIL"
+  -
+    rule_id: "SJ-F-105"
+    rule_name: "Required emergency opening net clear area"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Use actual clear area after normal operation; all opening dimension checks also apply."
+    applies_when:
+      -
+        field: "emergency_opening_required"
+        operator: "eq"
+        value: true
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when:
+            -
+              field: "grade_floor_reduction_verified"
+              operator: "eq"
+              value: false
+          checks:
+            -
+              field: "net_clear_area_sqft"
+              operator: "gte"
+              value: 5.7
+              unit: "sqft"
+        -
+          when:
+            -
+              field: "grade_floor_reduction_verified"
+              operator: "eq"
+              value: true
+          checks:
+            -
+              field: "net_clear_area_sqft"
+              operator: "gte"
+              value: 5
+              unit: "sqft"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/businesses/development-services-permit-center/start-your-project/window-replacements"
+        section: "Window size: sleeping rooms and basements"
+        source_type: "city_published_guidance"
+        retrieval: "indexed_official_page_excerpt"
+        checked_on: "2026-11-14"
+      -
+        url: "https://www.sanjoseca.gov/home/showpublisheddocument/94721/638511967421800000"
+        section: "Emergency Escape and Rescue (R319)"
+        source_type: "city_published_guidance"
+        retrieval: "full_document"
+        checked_on: "2026-11-14"
+        printed_page: 93
+    exceptions_and_limits:
+      - "Verify qualification for the grade-floor reduction from site evidence; city guide describes an exterior-grade-to-opening distance of 44 inches or less. Unknown qualification is unresolved, not false."
+      - "For a rectangular clear opening calculate square feet as clear width in inches times clear height in inches divided by 144. Do not use rough-opening dimensions."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          emergency_opening_required: true
+          grade_floor_reduction_verified: false
+          net_clear_area_sqft: 5.7
+        expected_outcome: "PASS"
+      -
+        facts:
+          emergency_opening_required: true
+          grade_floor_reduction_verified: false
+          net_clear_area_sqft: 3.3333333333333335
+        expected_outcome: "FAIL"
+      -
+        facts:
+          emergency_opening_required: true
+          grade_floor_reduction_verified: true
+          net_clear_area_sqft: 5
+        expected_outcome: "PASS"
+      -
+        facts:
+          emergency_opening_required: true
+          net_clear_area_sqft: 5.2
+        expected_outcome: "NEEDS_INFORMATION"
+  -
+    rule_id: "SJ-F-106"
+    rule_name: "Basement emergency window well"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Check the well serving a required basement emergency opening."
+    applies_when:
+      -
+        field: "basement_emergency_window_well_required"
+        operator: "eq"
+        value: true
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when: []
+          checks:
+            -
+              field: "well_clear_area_sqft"
+              operator: "gte"
+              value: 9
+              unit: "sqft"
+            -
+              field: "well_clear_width_in"
+              operator: "gte"
+              value: 36
+              unit: "in"
+            -
+              field: "well_clear_projection_in"
+              operator: "gte"
+              value: 36
+              unit: "in"
+            -
+              field: "opening_can_fully_open"
+              operator: "eq"
+              value: true
+              unit: "boolean"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/businesses/development-services-permit-center/start-your-project/basements"
+        section: "Window Well or Light Well"
+        source_type: "city_published_guidance"
+        retrieval: "indexed_official_page_excerpt"
+        checked_on: "2026-11-14"
+    exceptions_and_limits:
+      - "Additional drainage, ladder, and obstruction requirements are not covered by this check."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          basement_emergency_window_well_required: true
+          well_clear_area_sqft: 9
+          well_clear_width_in: 36
+          well_clear_projection_in: 36
+          opening_can_fully_open: true
+        expected_outcome: "PASS"
+      -
+        facts:
+          basement_emergency_window_well_required: true
+          well_clear_area_sqft: 9
+          well_clear_width_in: 30
+          well_clear_projection_in: 43.2
+          opening_can_fully_open: true
+        expected_outcome: "FAIL"

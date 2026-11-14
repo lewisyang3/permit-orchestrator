@@ -1,0 +1,490 @@
+# Sourced San José residential starter checks; see README.md for scope.
+schema_version: "0.2.0"
+rule_set_id: "san-jose-water-residential-starter"
+version: "0.2.0"
+department: "water"
+status: "sourced_partial_rule_set"
+scope:
+  jurisdiction: "San José city jurisdiction, California"
+  project_category: "Conventional single-family primary dwellings: new work and affected elements of additions or alterations."
+  code_basis: "2025 California codes as described in city guidance; verify the project uses this code cycle."
+  excluded:
+    - "commercial_or_assembly"
+    - "multifamily"
+    - "ADU_or_JADU"
+    - "SB9_or_other_special_housing_pathway"
+    - "Planned_Development"
+    - "historic_or_alternative_design_pathway"
+  existing_unchanged_elements: "Do not infer a retrofit obligation from these new-work dimensions. Establish the applicable alteration requirements first."
+  on_unsupported_project: "REQUIRES_HUMAN_REVIEW"
+evaluation_policy:
+  instructions: "Determine applicability from evidence, select one requirement case, then compare every check. Cite both the requirement and project evidence in each finding."
+  allow_model_to_invent_thresholds: false
+  outcomes:
+    - "PASS"
+    - "FAIL"
+    - "NOT_APPLICABLE"
+    - "NEEDS_INFORMATION"
+    - "REQUIRES_HUMAN_REVIEW"
+  unknown_applicability: "NEEDS_INFORMATION"
+  unknown_exception: "REQUIRES_HUMAN_REVIEW"
+  no_matching_or_multiple_matching_cases: "REQUIRES_HUMAN_REVIEW"
+  missing_check_field: "NEEDS_INFORMATION"
+  not_applicable_requires_evidence: true
+  empty_collection_is_pass: false
+  coverage: "Individual checks only. Passing these checks does not complete department review."
+  allow_final_department_approval_from_this_pack_alone: false
+  contract_mapping: "Internal unresolved outcomes need a coordinated contract update; never silently convert them to APPROVED or a verified violation."
+input_convention: "Facts are normalized evidence for each relevant object, not new fields already present in contract/models.py. Evaluate all affected objects separately; keep document/page references."
+known_coverage_gaps:
+  - "Provider-specific service and backflow requirements"
+  - "Fixture test conditions and product certification"
+  - "Sewer capacity and discharge approval"
+  - "Treatment sizing and performance"
+  - "Construction stormwater and common-plan obligations"
+  - "Special stormwater compliance pathways"
+rules:
+  -
+    rule_id: "SJ-W-101"
+    rule_name: "Water closet flush volume"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Compare manufacturer-rated performance for the proposed fixture."
+    applies_when:
+      -
+        field: "fixture_type"
+        operator: "eq"
+        value: "water_closet"
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when: []
+          checks:
+            -
+              field: "effective_flush_volume_gpf"
+              operator: "lte"
+              value: 1.28
+              unit: "gallons_per_flush"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/businesses/development-services-permit-center/start-your-project/plumbing-projects"
+        section: "Fixtures: Mandatory Water-Efficiency Flow Rates"
+        source_type: "city_published_guidance"
+        retrieval: "indexed_official_page_excerpt"
+        checked_on: "2026-11-14"
+    exceptions_and_limits:
+      - "Use rated product evidence, not an arbitrary measured operating flow. Verify applicable test conditions, listing, and any additional system-level requirements separately."
+      - "For a kitchen faucet without above-normal flow, above_normal_flow_only_temporary_override is true because no above-normal mode exists."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          effective_flush_volume_gpf: 1.28
+          fixture_type: "water_closet"
+        expected_outcome: "PASS"
+      -
+        facts:
+          effective_flush_volume_gpf: 1.29
+          fixture_type: "water_closet"
+        expected_outcome: "FAIL"
+  -
+    rule_id: "SJ-W-102"
+    rule_name: "Showerhead rated flow"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Compare manufacturer-rated performance for the proposed fixture."
+    applies_when:
+      -
+        field: "fixture_type"
+        operator: "eq"
+        value: "showerhead"
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when: []
+          checks:
+            -
+              field: "rated_flow_gpm"
+              operator: "lte"
+              value: 1.8
+              unit: "gallons_per_minute"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/businesses/development-services-permit-center/start-your-project/plumbing-projects"
+        section: "Fixtures: Mandatory Water-Efficiency Flow Rates"
+        source_type: "city_published_guidance"
+        retrieval: "indexed_official_page_excerpt"
+        checked_on: "2026-11-14"
+    exceptions_and_limits:
+      - "Use rated product evidence, not an arbitrary measured operating flow. Verify applicable test conditions, listing, and any additional system-level requirements separately."
+      - "For a kitchen faucet without above-normal flow, above_normal_flow_only_temporary_override is true because no above-normal mode exists."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          rated_flow_gpm: 1.8
+          fixture_type: "showerhead"
+        expected_outcome: "PASS"
+      -
+        facts:
+          rated_flow_gpm: 1.81
+          fixture_type: "showerhead"
+        expected_outcome: "FAIL"
+  -
+    rule_id: "SJ-W-103"
+    rule_name: "Residential bathroom faucet rated flow"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Compare manufacturer-rated performance for the proposed fixture."
+    applies_when:
+      -
+        field: "fixture_type"
+        operator: "eq"
+        value: "residential_bathroom_faucet"
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when: []
+          checks:
+            -
+              field: "rated_flow_gpm"
+              operator: "lte"
+              value: 1.2
+              unit: "gallons_per_minute"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/businesses/development-services-permit-center/start-your-project/plumbing-projects"
+        section: "Fixtures: Mandatory Water-Efficiency Flow Rates"
+        source_type: "city_published_guidance"
+        retrieval: "indexed_official_page_excerpt"
+        checked_on: "2026-11-14"
+    exceptions_and_limits:
+      - "Use rated product evidence, not an arbitrary measured operating flow. Verify applicable test conditions, listing, and any additional system-level requirements separately."
+      - "For a kitchen faucet without above-normal flow, above_normal_flow_only_temporary_override is true because no above-normal mode exists."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          rated_flow_gpm: 1.2
+          fixture_type: "residential_bathroom_faucet"
+        expected_outcome: "PASS"
+      -
+        facts:
+          rated_flow_gpm: 1.21
+          fixture_type: "residential_bathroom_faucet"
+        expected_outcome: "FAIL"
+  -
+    rule_id: "SJ-W-104"
+    rule_name: "Residential kitchen faucet rated flow"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Compare manufacturer-rated performance for the proposed fixture."
+    applies_when:
+      -
+        field: "fixture_type"
+        operator: "eq"
+        value: "residential_kitchen_faucet"
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when: []
+          checks:
+            -
+              field: "normal_rated_flow_gpm"
+              operator: "lte"
+              value: 1.8
+              unit: "gallons_per_minute"
+            -
+              field: "maximum_rated_flow_gpm"
+              operator: "lte"
+              value: 2.2
+              unit: "gallons_per_minute"
+            -
+              field: "above_normal_flow_only_temporary_override"
+              operator: "eq"
+              value: true
+              unit: "boolean"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/businesses/development-services-permit-center/start-your-project/plumbing-projects"
+        section: "Fixtures: Mandatory Water-Efficiency Flow Rates"
+        source_type: "city_published_guidance"
+        retrieval: "indexed_official_page_excerpt"
+        checked_on: "2026-11-14"
+    exceptions_and_limits:
+      - "Use rated product evidence, not an arbitrary measured operating flow. Verify applicable test conditions, listing, and any additional system-level requirements separately."
+      - "For a kitchen faucet without above-normal flow, above_normal_flow_only_temporary_override is true because no above-normal mode exists."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          normal_rated_flow_gpm: 1.8
+          maximum_rated_flow_gpm: 2.2
+          above_normal_flow_only_temporary_override: true
+          fixture_type: "residential_kitchen_faucet"
+        expected_outcome: "PASS"
+      -
+        facts:
+          normal_rated_flow_gpm: 1.81
+          maximum_rated_flow_gpm: 2.2
+          above_normal_flow_only_temporary_override: true
+          fixture_type: "residential_kitchen_faucet"
+        expected_outcome: "FAIL"
+  -
+    rule_id: "SJ-W-105"
+    rule_name: "Detached single-family regulated stormwater trigger"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "At or above the impervious-area trigger, require the regulated-project stormwater package."
+    applies_when:
+      -
+        field: "detached_single_family_project"
+        operator: "eq"
+        value: true
+      -
+        field: "part_of_larger_development_plan"
+        operator: "eq"
+        value: false
+      -
+        field: "temporary_emergency_housing"
+        operator: "eq"
+        value: false
+      -
+        field: "legacy_mrp2_exemption"
+        operator: "eq"
+        value: false
+      -
+        field: "new_and_replaced_impervious_area_sqft"
+        operator: "gte"
+        value: 10000
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when: []
+          checks:
+            -
+              field: "stormwater_control_plan_submitted"
+              operator: "eq"
+              value: true
+              unit: "boolean"
+            -
+              field: "site_design_measures_documented"
+              operator: "eq"
+              value: true
+              unit: "boolean"
+            -
+              field: "source_controls_documented"
+              operator: "eq"
+              value: true
+              unit: "boolean"
+            -
+              field: "lid_treatment_design_documented"
+              operator: "eq"
+              value: true
+              unit: "boolean"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/home/showpublisheddocument/32849/638947338114830000"
+        section: "Stormwater Evaluation Form #138 (5/15/2025), section 3.c"
+        source_type: "city_published_guidance"
+        retrieval: "full_document"
+        checked_on: "2026-11-14"
+        printed_page: "Form page 3 of 5"
+    exceptions_and_limits:
+      - "Area includes relevant onsite and offsite improvements; do not use building floor area. The trigger is 10,000 square feet for this scoped category, not the general 5,000-square-foot threshold."
+      - "Check legacy MRP 2.0 eligibility and temporary emergency housing before applying. Larger common plans and special compliance pathways require separate review."
+      - "Submission completeness does not establish adequate treatment sizing or performance."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          detached_single_family_project: true
+          part_of_larger_development_plan: false
+          temporary_emergency_housing: false
+          legacy_mrp2_exemption: false
+          new_and_replaced_impervious_area_sqft: 10000
+          stormwater_control_plan_submitted: true
+          site_design_measures_documented: true
+          source_controls_documented: true
+          lid_treatment_design_documented: false
+        expected_outcome: "FAIL"
+  -
+    rule_id: "SJ-W-106"
+    rule_name: "Small detached single-family stormwater site design"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Within the small-project interval, require at least one site-design measure and the specified form sections."
+    applies_when:
+      -
+        field: "detached_single_family_project"
+        operator: "eq"
+        value: true
+      -
+        field: "part_of_larger_development_plan"
+        operator: "eq"
+        value: false
+      -
+        field: "temporary_emergency_housing"
+        operator: "eq"
+        value: false
+      -
+        field: "legacy_mrp2_exemption"
+        operator: "eq"
+        value: false
+      -
+        field: "new_and_replaced_impervious_area_sqft"
+        operator: "gte"
+        value: 2500
+      -
+        field: "new_and_replaced_impervious_area_sqft"
+        operator: "lt"
+        value: 10000
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when: []
+          checks:
+            -
+              field: "site_design_measure_count"
+              operator: "gte"
+              value: 1
+              unit: "count"
+            -
+              field: "form_138_sections_1_2_3g_completed"
+              operator: "eq"
+              value: true
+              unit: "boolean"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/home/showpublisheddocument/32849/638947338114830000"
+        section: "Stormwater Evaluation Form #138 (5/15/2025), section 3.c"
+        source_type: "city_published_guidance"
+        retrieval: "full_document"
+        checked_on: "2026-11-14"
+        printed_page: "Form page 3 of 5"
+    exceptions_and_limits:
+      - "This interval does not exempt the project from other stormwater, discharge, or source-control requirements."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          detached_single_family_project: true
+          part_of_larger_development_plan: false
+          temporary_emergency_housing: false
+          legacy_mrp2_exemption: false
+          new_and_replaced_impervious_area_sqft: 2500
+          site_design_measure_count: 1
+          form_138_sections_1_2_3g_completed: true
+        expected_outcome: "PASS"
+      -
+        facts:
+          detached_single_family_project: true
+          part_of_larger_development_plan: false
+          temporary_emergency_housing: false
+          legacy_mrp2_exemption: false
+          new_and_replaced_impervious_area_sqft: 2499.99
+        expected_outcome: "NOT_APPLICABLE"
+  -
+    rule_id: "SJ-W-107"
+    rule_name: "Regulated redevelopment treatment extent"
+    status: "sourced_starter_check"
+    evaluation_enabled: true
+    description: "Select treatment scope using the form replacement percentage."
+    applies_when:
+      -
+        field: "regulated_redevelopment_project"
+        operator: "eq"
+        value: true
+    prerequisites:
+      - "Project is within the declared pack scope."
+      - "Applicability and any claimed exception are supported by project evidence."
+    requirement:
+      cases:
+        -
+          when:
+            -
+              field: "impervious_replacement_percent"
+              operator: "gte"
+              value: 50
+          checks:
+            -
+              field: "entire_site_in_treatment_scope"
+              operator: "eq"
+              value: true
+              unit: "boolean"
+        -
+          when:
+            -
+              field: "impervious_replacement_percent"
+              operator: "lt"
+              value: 50
+          checks:
+            -
+              field: "new_and_replaced_area_in_treatment_scope"
+              operator: "eq"
+              value: true
+              unit: "boolean"
+      combine_checks: "all"
+      case_selection: "exactly_one"
+    source:
+      -
+        url: "https://www.sanjoseca.gov/home/showpublisheddocument/32849/638947338114830000"
+        section: "Stormwater Evaluation Form #138, sections 2.d.17 and 3.d"
+        source_type: "city_published_guidance"
+        retrieval: "full_document"
+        checked_on: "2026-11-14"
+        printed_page: "Form pages 2–3 of 5"
+    exceptions_and_limits:
+      - "Compute replacement percentage using form 2.d.17, not gross floor-area percentage. A zero existing-area denominator needs review."
+      - "Only apply after regulated-project status and any exception or alternative compliance are established."
+    on_missing_evidence: "NEEDS_INFORMATION"
+    on_unresolved_exception: "REQUIRES_HUMAN_REVIEW"
+    examples:
+      -
+        facts:
+          regulated_redevelopment_project: true
+          impervious_replacement_percent: 50
+          entire_site_in_treatment_scope: false
+        expected_outcome: "FAIL"
+      -
+        facts:
+          regulated_redevelopment_project: true
+          impervious_replacement_percent: 49.99
+          new_and_replaced_area_in_treatment_scope: true
+        expected_outcome: "PASS"
