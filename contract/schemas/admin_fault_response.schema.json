@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "admin_fault_response.schema.json",
+  "title": "AdminFaultResponse",
+  "description": "Response returned by Orchestrator on GET /admin/fault reporting fault state for all 4 departments",
+  "type": "object",
+  "required": ["zoning", "fire", "water", "structural"],
+  "properties": {
+    "zoning": { "$ref": "fault_control.schema.json" },
+    "fire": { "$ref": "fault_control.schema.json" },
+    "water": { "$ref": "fault_control.schema.json" },
+    "structural": { "$ref": "fault_control.schema.json" }
+  }
+}

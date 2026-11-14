@@ -1,0 +1,139 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "permit.schema.json",
+  "title": "Permit",
+  "description": "Standardized building permit application payload submitted to Permit Orchestrator",
+  "type": "object",
+  "required": [
+    "project_title",
+    "property_address",
+    "applicant",
+    "zoning",
+    "fire",
+    "water",
+    "structural"
+  ],
+  "properties": {
+    "permit_id": {
+      "type": ["string", "null"],
+      "description": "Unique permit identifier (UUID or assigned slug like pm-2026-001)"
+    },
+    "project_title": {
+      "type": "string",
+      "description": "Short project title, e.g. 'Two-Story Residential Addition'"
+    },
+    "project_description": {
+      "type": ["string", "null"],
+      "description": "Detailed description of the proposed building scope"
+    },
+    "estimated_cost_usd": {
+      "type": "number",
+      "minimum": 0
+    },
+    "property_address": {
+      "type": "object",
+      "required": ["street", "city", "state", "zip"],
+      "properties": {
+        "street": { "type": "string" },
+        "city": { "type": "string" },
+        "state": { "type": "string" },
+        "zip": { "type": "string" }
+      }
+    },
+    "applicant": {
+      "type": "object",
+      "required": ["name", "role", "email"],
+      "properties": {
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["homeowner", "licensed_contractor", "architect", "engineer"] },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": ["string", "null"] }
+      }
+    },
+    "zoning": {
+      "type": "object",
+      "required": [
+        "zone_code",
+        "building_height_ft",
+        "lot_area_sqft",
+        "building_footprint_sqft",
+        "setback_front_ft",
+        "setback_rear_ft",
+        "setback_side_ft"
+      ],
+      "properties": {
+        "zone_code": {
+          "type": "string",
+          "enum": ["R-1", "R-2", "C-1", "C-2", "MU", "M-1"],
+          "description": "Municipal zoning classification"
+        },
+        "building_height_ft": { "type": "number", "minimum": 0 },
+        "lot_area_sqft": { "type": "number", "minimum": 0 },
+        "building_footprint_sqft": { "type": "number", "minimum": 0 },
+        "setback_front_ft": { "type": "number", "minimum": 0 },
+        "setback_rear_ft": { "type": "number", "minimum": 0 },
+        "setback_side_ft": { "type": "number", "minimum": 0 }
+      }
+    },
+    "fire": {
+      "type": "object",
+      "required": [
+        "occupancy_type",
+        "occupant_load",
+        "has_sprinkler_system",
+        "egress_exits_count",
+        "distance_to_hydrant_ft"
+      ],
+      "properties": {
+        "occupancy_type": {
+          "type": "string",
+          "enum": ["residential", "commercial", "assembly", "industrial"]
+        },
+        "occupant_load": { "type": "integer", "minimum": 1 },
+        "has_sprinkler_system": { "type": "boolean" },
+        "egress_exits_count": { "type": "integer", "minimum": 1 },
+        "distance_to_hydrant_ft": { "type": "number", "minimum": 0 },
+        "has_fire_alarm": { "type": "boolean" }
+      }
+    },
+    "water": {
+      "type": "object",
+      "required": [
+        "water_meter_size_inches",
+        "daily_water_usage_gpd",
+        "has_backflow_preventer",
+        "has_stormwater_plan"
+      ],
+      "properties": {
+        "water_meter_size_inches": { "type": "number", "enum": [0.75, 1.0, 1.5, 2.0, 3.0] },
+        "daily_water_usage_gpd": { "type": "number", "minimum": 0 },
+        "has_backflow_preventer": { "type": "boolean" },
+        "has_stormwater_plan": { "type": "boolean" }
+      }
+    },
+    "structural": {
+      "type": "object",
+      "required": [
+        "stories_count",
+        "construction_type",
+        "seismic_design_category",
+        "foundation_type"
+      ],
+      "properties": {
+        "stories_count": { "type": "integer", "minimum": 1 },
+        "construction_type": {
+          "type": "string",
+          "enum": ["wood_frame", "light_steel", "reinforced_concrete", "masonry"]
+        },
+        "seismic_design_category": {
+          "type": "string",
+          "enum": ["A", "B", "C", "D", "E"]
+        },
+        "foundation_type": {
+          "type": "string",
+          "enum": ["slab_on_grade", "crawlspace", "continuous_spread_footing", "deep_pile"]
+        }
+      }
+    }
+  }
+}

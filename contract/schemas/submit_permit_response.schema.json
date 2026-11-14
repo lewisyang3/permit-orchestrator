@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "submit_permit_response.schema.json",
+  "title": "SubmitPermitResponse",
+  "description": "Response returned by Orchestrator on POST /submit (HTTP 202 Accepted)",
+  "type": "object",
+  "required": ["permit_id", "trace_id", "state", "stream_url"],
+  "properties": {
+    "permit_id": {
+      "type": "string",
+      "description": "Unique permit identifier assigned by Orchestrator"
+    },
+    "trace_id": {
+      "type": "string",
+      "description": "Distributed trace ID for observability correlation"
+    },
+    "state": {
+      "type": "string",
+      "enum": ["RECEIVED"],
+      "description": "Initial saga state"
+    },
+    "stream_url": {
+      "type": "string",
+      "description": "Relative SSE stream endpoint path (e.g. /permits/{permit_id}/stream)"
+    }
+  }
+}

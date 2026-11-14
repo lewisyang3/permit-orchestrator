@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "department_request.schema.json",
+  "title": "DepartmentEvaluationRequest",
+  "description": "Payload sent by Orchestrator (Person A) to each Department microservice (Person B) via POST /evaluate",
+  "type": "object",
+  "required": ["permit_id", "trace_id", "department", "attempt", "permit"],
+  "properties": {
+    "permit_id": {
+      "type": "string",
+      "description": "Unique identifier of the permit application"
+    },
+    "trace_id": {
+      "type": "string",
+      "description": "Distributed trace ID for observability correlation"
+    },
+    "department": {
+      "type": "string",
+      "enum": ["zoning", "fire", "water", "structural"]
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Attempt sequence number (1 for initial, 2+ for retries)"
+    },
+    "permit": {
+      "$ref": "permit.schema.json"
+    }
+  }
+}

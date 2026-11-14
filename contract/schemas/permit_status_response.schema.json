@@ -1,0 +1,84 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "permit_status_response.schema.json",
+  "title": "PermitStatusResponse",
+  "description": "Consolidated state and results returned by Orchestrator on GET /permits/{permit_id}",
+  "type": "object",
+  "required": [
+    "permit_id",
+    "trace_id",
+    "state",
+    "final_decision",
+    "created_at",
+    "department_results"
+  ],
+  "properties": {
+    "permit_id": { "type": "string" },
+    "trace_id": { "type": "string" },
+    "state": {
+      "type": "string",
+      "enum": ["RECEIVED", "EVALUATING", "DECIDED"],
+      "description": "Saga execution state"
+    },
+    "final_decision": {
+      "type": "string",
+      "enum": ["PENDING", "APPROVED", "REJECTED"],
+      "description": "Consensus outcome"
+    },
+    "decision_code": {
+      "type": ["string", "null"],
+      "enum": [
+        "PENDING",
+        "ALL_DEPARTMENTS_APPROVED",
+        "DEPARTMENT_REJECTIONS",
+        "INCOMPLETE_REVIEWS",
+        null
+      ]
+    },
+    "decision_summary": {
+      "type": ["string", "null"],
+      "description": "Human-readable synthesis of why the permit was approved or rejected"
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "decided_at": { "type": ["string", "null"], "format": "date-time" },
+    "department_results": {
+      "type": "object",
+      "required": ["zoning", "fire", "water", "structural"],
+      "properties": {
+        "zoning": { "$ref": "#/definitions/DepartmentResultSummary" },
+        "fire": { "$ref": "#/definitions/DepartmentResultSummary" },
+        "water": { "$ref": "#/definitions/DepartmentResultSummary" },
+        "structural": { "$ref": "#/definitions/DepartmentResultSummary" }
+      }
+    }
+  },
+  "definitions": {
+    "DepartmentResultSummary": {
+      "type": "object",
+      "required": ["status", "attempts", "latency_ms", "reasons"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["PENDING", "APPROVED", "REJECTED", "TIMEOUT", "ERROR"]
+        },
+        "attempts": { "type": "integer", "minimum": 0 },
+        "latency_ms": { "type": "number", "minimum": 0 },
+        "error_message": { "type": ["string", "null"] },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["rule_id", "rule_name", "passed", "message"],
+            "properties": {
+              "rule_id": { "type": "string" },
+              "rule_name": { "type": "string" },
+              "passed": { "type": "boolean" },
+              "severity": { "type": "string", "enum": ["VIOLATION", "ADVISORY", "INFO"] },
+              "message": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

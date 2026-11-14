@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "trace_event.schema.json",
+  "title": "TraceEvent",
+  "description": "Granular lifecycle span event recorded in SQLite and streamed via SSE to the Trace UI",
+  "type": "object",
+  "required": ["event_id", "trace_id", "permit_id", "span", "parent_span", "type", "ts", "detail"],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "description": "Unique event ID (e.g. evt-001 or UUID)"
+    },
+    "trace_id": {
+      "type": "string",
+      "description": "Distributed trace ID"
+    },
+    "permit_id": {
+      "type": "string"
+    },
+    "span": {
+      "type": "string",
+      "enum": [
+        "orchestrator",
+        "dept:zoning",
+        "dept:fire",
+        "dept:water",
+        "dept:structural",
+        "consensus"
+      ]
+    },
+    "parent_span": {
+      "type": ["string", "null"],
+      "description": "null for root orchestrator span, 'orchestrator' for department and consensus child spans"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "PERMIT_RECEIVED",
+        "SPAN_STARTED",
+        "CALL_DISPATCHED",
+        "CALL_RETRYING",
+        "CALL_SUCCEEDED",
+        "CALL_TIMED_OUT",
+        "CALL_FAILED",
+        "SPAN_COMPLETED",
+        "CONSENSUS_STARTED",
+        "PERMIT_DECIDED"
+      ]
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp with millisecond precision"
+    },
+    "detail": {
+      "type": "object",
+      "description": "Contextual metadata specific to event type (e.g. attempt, latency_ms, decision, error)"
+    }
+  }
+}
