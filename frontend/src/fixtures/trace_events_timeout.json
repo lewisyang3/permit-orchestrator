@@ -1,0 +1,282 @@
+[
+  {
+    "event_id": "evt-to-001",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "orchestrator",
+    "parent_span": null,
+    "type": "PERMIT_RECEIVED",
+    "ts": "2026-11-13T16:34:40.000Z",
+    "detail": {
+      "project_title": "Suburban Storage Warehouse Modernization",
+      "applicant": "Morgan Davis",
+      "state": "RECEIVED"
+    }
+  },
+  {
+    "event_id": "evt-to-002",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:zoning",
+    "parent_span": "orchestrator",
+    "type": "SPAN_STARTED",
+    "ts": "2026-11-13T16:34:40.010Z",
+    "detail": { "department": "zoning" }
+  },
+  {
+    "event_id": "evt-to-003",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:fire",
+    "parent_span": "orchestrator",
+    "type": "SPAN_STARTED",
+    "ts": "2026-11-13T16:34:40.012Z",
+    "detail": { "department": "fire" }
+  },
+  {
+    "event_id": "evt-to-004",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:water",
+    "parent_span": "orchestrator",
+    "type": "SPAN_STARTED",
+    "ts": "2026-11-13T16:34:40.014Z",
+    "detail": { "department": "water" }
+  },
+  {
+    "event_id": "evt-to-005",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:structural",
+    "parent_span": "orchestrator",
+    "type": "SPAN_STARTED",
+    "ts": "2026-11-13T16:34:40.016Z",
+    "detail": { "department": "structural" }
+  },
+  {
+    "event_id": "evt-to-006",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:fire",
+    "parent_span": "orchestrator",
+    "type": "CALL_DISPATCHED",
+    "ts": "2026-11-13T16:34:40.020Z",
+    "detail": { "attempt": 1, "endpoint": "http://fire:8002/evaluate" }
+  },
+  {
+    "event_id": "evt-to-007",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:water",
+    "parent_span": "orchestrator",
+    "type": "CALL_DISPATCHED",
+    "ts": "2026-11-13T16:34:40.022Z",
+    "detail": { "attempt": 1, "endpoint": "http://water:8003/evaluate" }
+  },
+  {
+    "event_id": "evt-to-008",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:zoning",
+    "parent_span": "orchestrator",
+    "type": "CALL_DISPATCHED",
+    "ts": "2026-11-13T16:34:40.024Z",
+    "detail": { "attempt": 1, "endpoint": "http://zoning:8001/evaluate" }
+  },
+  {
+    "event_id": "evt-to-009",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:structural",
+    "parent_span": "orchestrator",
+    "type": "CALL_DISPATCHED",
+    "ts": "2026-11-13T16:34:40.026Z",
+    "detail": { "attempt": 1, "endpoint": "http://structural:8004/evaluate" }
+  },
+  {
+    "event_id": "evt-to-010",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:water",
+    "parent_span": "orchestrator",
+    "type": "CALL_SUCCEEDED",
+    "ts": "2026-11-13T16:34:40.170Z",
+    "detail": { "status": "APPROVED", "attempt": 1, "latency_ms": 148 }
+  },
+  {
+    "event_id": "evt-to-011",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:water",
+    "parent_span": "orchestrator",
+    "type": "SPAN_COMPLETED",
+    "ts": "2026-11-13T16:34:40.175Z",
+    "detail": { "status": "APPROVED", "duration_ms": 161 }
+  },
+  {
+    "event_id": "evt-to-012",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:zoning",
+    "parent_span": "orchestrator",
+    "type": "CALL_SUCCEEDED",
+    "ts": "2026-11-13T16:34:40.230Z",
+    "detail": { "status": "APPROVED", "attempt": 1, "latency_ms": 206 }
+  },
+  {
+    "event_id": "evt-to-013",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:zoning",
+    "parent_span": "orchestrator",
+    "type": "SPAN_COMPLETED",
+    "ts": "2026-11-13T16:34:40.235Z",
+    "detail": { "status": "APPROVED", "duration_ms": 225 }
+  },
+  {
+    "event_id": "evt-to-014",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:structural",
+    "parent_span": "orchestrator",
+    "type": "CALL_SUCCEEDED",
+    "ts": "2026-11-13T16:34:40.250Z",
+    "detail": { "status": "APPROVED", "attempt": 1, "latency_ms": 224 }
+  },
+  {
+    "event_id": "evt-to-015",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:structural",
+    "parent_span": "orchestrator",
+    "type": "SPAN_COMPLETED",
+    "ts": "2026-11-13T16:34:40.255Z",
+    "detail": { "status": "APPROVED", "duration_ms": 239 }
+  },
+  {
+    "event_id": "evt-to-016",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:fire",
+    "parent_span": "orchestrator",
+    "type": "CALL_TIMED_OUT",
+    "ts": "2026-11-13T16:34:42.020Z",
+    "detail": { "attempt": 1, "timeout_seconds": 2.0, "error": "ClientTimeout after 2000ms" }
+  },
+  {
+    "event_id": "evt-to-017",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:fire",
+    "parent_span": "orchestrator",
+    "type": "CALL_RETRYING",
+    "ts": "2026-11-13T16:34:42.025Z",
+    "detail": { "attempt": 1, "next_attempt": 2, "backoff_ms": 200 }
+  },
+  {
+    "event_id": "evt-to-018",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:fire",
+    "parent_span": "orchestrator",
+    "type": "CALL_DISPATCHED",
+    "ts": "2026-11-13T16:34:42.225Z",
+    "detail": { "attempt": 2, "endpoint": "http://fire:8002/evaluate" }
+  },
+  {
+    "event_id": "evt-to-019",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:fire",
+    "parent_span": "orchestrator",
+    "type": "CALL_TIMED_OUT",
+    "ts": "2026-11-13T16:34:44.225Z",
+    "detail": { "attempt": 2, "timeout_seconds": 2.0, "error": "ClientTimeout after 2000ms" }
+  },
+  {
+    "event_id": "evt-to-020",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:fire",
+    "parent_span": "orchestrator",
+    "type": "CALL_RETRYING",
+    "ts": "2026-11-13T16:34:44.230Z",
+    "detail": { "attempt": 2, "next_attempt": 3, "backoff_ms": 500 }
+  },
+  {
+    "event_id": "evt-to-021",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:fire",
+    "parent_span": "orchestrator",
+    "type": "CALL_DISPATCHED",
+    "ts": "2026-11-13T16:34:44.730Z",
+    "detail": { "attempt": 3, "endpoint": "http://fire:8002/evaluate" }
+  },
+  {
+    "event_id": "evt-to-022",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:fire",
+    "parent_span": "orchestrator",
+    "type": "CALL_TIMED_OUT",
+    "ts": "2026-11-13T16:34:46.730Z",
+    "detail": { "attempt": 3, "timeout_seconds": 2.0, "error": "ClientTimeout after 2000ms" }
+  },
+  {
+    "event_id": "evt-to-023",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:fire",
+    "parent_span": "orchestrator",
+    "type": "CALL_FAILED",
+    "ts": "2026-11-13T16:34:46.735Z",
+    "detail": { "attempts_total": 3, "final_status": "TIMEOUT", "error": "Retries exhausted" }
+  },
+  {
+    "event_id": "evt-to-024",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "dept:fire",
+    "parent_span": "orchestrator",
+    "type": "SPAN_COMPLETED",
+    "ts": "2026-11-13T16:34:46.740Z",
+    "detail": { "status": "TIMEOUT", "duration_ms": 6728, "attempts": 3 }
+  },
+  {
+    "event_id": "evt-to-025",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "consensus",
+    "parent_span": "orchestrator",
+    "type": "CONSENSUS_STARTED",
+    "ts": "2026-11-13T16:34:46.745Z",
+    "detail": { "departments_responded": 3, "approvals": 3, "rejections": 0, "failures": 1, "departments_failed": 1, "failed_departments": ["fire"] }
+  },
+  {
+    "event_id": "evt-to-026",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "consensus",
+    "parent_span": "orchestrator",
+    "type": "SPAN_COMPLETED",
+    "ts": "2026-11-13T16:34:46.750Z",
+    "detail": { "status": "REJECTED", "decision": "REJECTED", "duration_ms": 5 }
+  },
+  {
+    "event_id": "evt-to-027",
+    "trace_id": "trc-to-003",
+    "permit_id": "pm-fixture-timeout-offline-003",
+    "span": "orchestrator",
+    "parent_span": null,
+    "type": "PERMIT_DECIDED",
+    "ts": "2026-11-13T16:34:46.755Z",
+    "detail": {
+      "state": "DECIDED",
+      "final_decision": "REJECTED",
+      "decision_code": "INCOMPLETE_REVIEWS",
+      "decision_summary": "Application rejected as incomplete: Department [fire] timed out after 3 attempts.",
+      "total_duration_ms": 6755
+    }
+  }
+]
