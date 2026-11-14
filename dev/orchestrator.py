@@ -8,7 +8,7 @@ import asyncio
 import json
 import os
 import sqlite3
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
@@ -33,8 +33,14 @@ def create_app(db_path: Path | None = None, transport=None) -> FastAPI:
         for index, dept in enumerate(DepartmentName)
     }
     # Enum order is zoning/fire/water/structural, matching the shared port map.
+    @contextmanager
     def connect():
-        return sqlite3.connect(path, timeout=5)
+        conn = sqlite3.connect(path, timeout=5)
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
