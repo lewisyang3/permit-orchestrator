@@ -366,15 +366,21 @@ def create_app(
         async def event_generator():
             seen_event_ids: set[str] = set()
             try:
-                # 1. Replay past trace events
+                # 1. Snapshot past events and saga state together, before any yield.
+                # The saga sets DECIDED and records PERMIT_DECIDED synchronously, so a
+                # DECIDED snapshot guarantees past_events is complete. Checking state
+                # after replay instead would drop events queued while replay yielded.
                 past_events = list(orchestrator_state.trace_events.get(permit_id, []))
+                decided_at_snapshot = (
+                    orchestrator_state.permits_db[permit_id].state == SagaState.DECIDED
+                )
                 for ev in past_events:
                     seen_event_ids.add(ev.event_id)
                     yield f"event: trace_event\ndata: {ev.model_dump_json()}\n\n"
 
-                status_item = orchestrator_state.permits_db[permit_id]
-                # 2. If already decided, emit done event and finish
-                if status_item.state == SagaState.DECIDED:
+                # 2. If already decided at snapshot time, emit done event and finish
+                if decided_at_snapshot:
+                    status_item = orchestrator_state.permits_db[permit_id]
                     done_payload = StreamDonePayload(
                         permit_id=permit_id, final_decision=status_item.final_decision
                     )

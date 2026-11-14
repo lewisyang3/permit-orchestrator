@@ -561,3 +561,71 @@ async def test_sse_stream_deduplication(sample_permit_payload):
     await task
 
 
+
+
+@pytest.mark.anyio
+async def test_sse_stream_does_not_drop_events_when_saga_finishes_during_replay(
+    sample_permit_payload,
+):
+    """If the saga decides while past events are being replayed, the events recorded
+    after the replay snapshot (e.g. PERMIT_DECIDED) must still be streamed before done."""
+    from datetime import datetime, timezone
+    from contract.models import PermitStatusResponse, SpanId, TraceEvent, TraceEventType
+
+    app = create_app(dispatcher_override=mock_approved_dispatcher)
+    orchestrator = app.state.orchestrator
+    permit_id = "test-stream-replay-race-001"
+
+    orchestrator.permits_db[permit_id] = PermitStatusResponse(
+        permit_id=permit_id,
+        trace_id="test-trace",
+        state=SagaState.EVALUATING,
+        final_decision=FinalDecision.PENDING,
+        decision_code=DecisionCode.PENDING,
+        created_at=datetime.now(timezone.utc),
+        department_results={
+            dept.value: DepartmentResultSummary(
+                status=DepartmentStatus.PENDING, attempts=0, latency_ms=0.0, reasons=[]
+            )
+            for dept in DepartmentName
+        },
+    )
+
+    def make_event(event_id: str, event_type: TraceEventType) -> TraceEvent:
+        return TraceEvent(
+            event_id=event_id,
+            trace_id="test-trace",
+            permit_id=permit_id,
+            span=SpanId.ORCHESTRATOR,
+            parent_span=None,
+            type=event_type,
+            ts=datetime.now(timezone.utc),
+            detail={},
+        )
+
+    orchestrator.trace_events[permit_id] = [
+        make_event("evt-race-received", TraceEventType.PERMIT_RECEIVED)
+    ]
+
+    stream_route = next(
+        r for r in app.routes if getattr(r, "path", None) == "/permits/{permit_id}/stream"
+    )
+    response = await stream_route.endpoint(permit_id)
+    body = response.body_iterator
+
+    # Consume the first replayed event, i.e. suspend the generator mid-replay.
+    first_chunk = await body.__anext__()
+    assert "evt-race-received" in first_chunk
+
+    # Saga finishes while the client is suspended in replay (same ordering as run_saga).
+    orchestrator.permits_db[permit_id].state = SagaState.DECIDED
+    orchestrator.permits_db[permit_id].final_decision = FinalDecision.APPROVED
+    orchestrator.record_event(
+        permit_id, make_event("evt-race-decided", TraceEventType.PERMIT_DECIDED)
+    )
+    orchestrator.close_stream_subscribers(permit_id)
+
+    rest = "".join([chunk async for chunk in body])
+    assert rest.count("evt-race-decided") == 1
+    assert rest.index("evt-race-decided") < rest.index("event: done")
+    assert rest.count("event: done") == 1

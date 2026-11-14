@@ -133,7 +133,8 @@ def test_department_fault_injection_modes():
         assert set_none.status_code == 200
         assert client.get("/fault").json()["mode"] == "none"
         eval_none = client.post("/evaluate", json=eval_payload)
-        assert eval_none.status_code == 501
+        assert eval_none.status_code == 422
+        assert eval_none.json()["detail"]["code"] == "INCOMPLETE_REVIEW"
 
 
 def test_department_cors_middleware():
