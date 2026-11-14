@@ -48,6 +48,7 @@ class OrchestratorApp:
         self.permit_events: Dict[str, asyncio.Event] = {}
         self.trace_events: Dict[str, List[TraceEvent]] = {}
         self.event_subscribers: Dict[str, List[asyncio.Queue[Optional[TraceEvent]]]] = {}
+        self.background_tasks: set[asyncio.Task[Any]] = set()
         self.custom_dispatcher: Optional[Callable[..., Any]] = None
         self.custom_consensus: Optional[Callable[..., Any]] = None
 
@@ -56,6 +57,7 @@ class OrchestratorApp:
         self.permit_events.clear()
         self.trace_events.clear()
         self.event_subscribers.clear()
+        self.background_tasks.clear()
 
     def record_event(self, permit_id: str, event: TraceEvent) -> None:
         """Store trace event and dispatch to any active SSE subscribers."""
@@ -284,6 +286,16 @@ def create_app(
             permit = permit.model_copy(update={"permit_id": permit_id})
         trace_id = str(uuid4())
 
+        initial_dept_results = {
+            dept.value: DepartmentResultSummary(
+                status=DepartmentStatus.PENDING,
+                attempts=0,
+                latency_ms=0.0,
+                reasons=[],
+            )
+            for dept in DepartmentName
+        }
+
         initial_status = PermitStatusResponse(
             permit_id=permit_id,
             trace_id=trace_id,
@@ -291,7 +303,7 @@ def create_app(
             final_decision=FinalDecision.PENDING,
             decision_code=DecisionCode.PENDING,
             created_at=datetime.now(timezone.utc),
-            department_results={},
+            department_results=initial_dept_results,
         )
         orchestrator_state.permits_db[permit_id] = initial_status
         event = asyncio.Event()
@@ -301,7 +313,9 @@ def create_app(
         if wait:
             await saga_coro
         else:
-            asyncio.create_task(saga_coro)
+            task = asyncio.create_task(saga_coro)
+            orchestrator_state.background_tasks.add(task)
+            task.add_done_callback(orchestrator_state.background_tasks.discard)
 
         return SubmitPermitResponse(
             permit_id=permit_id,
@@ -350,10 +364,12 @@ def create_app(
         orchestrator_state.event_subscribers[permit_id].append(queue)
 
         async def event_generator():
+            seen_event_ids: set[str] = set()
             try:
                 # 1. Replay past trace events
                 past_events = list(orchestrator_state.trace_events.get(permit_id, []))
                 for ev in past_events:
+                    seen_event_ids.add(ev.event_id)
                     yield f"event: trace_event\ndata: {ev.model_dump_json()}\n\n"
 
                 status_item = orchestrator_state.permits_db[permit_id]
@@ -375,6 +391,9 @@ def create_app(
                         )
                         yield f"event: done\ndata: {done_payload.model_dump_json()}\n\n"
                         break
+                    if event_item.event_id in seen_event_ids:
+                        continue
+                    seen_event_ids.add(event_item.event_id)
                     yield f"event: trace_event\ndata: {event_item.model_dump_json()}\n\n"
             finally:
                 if permit_id in orchestrator_state.event_subscribers:
@@ -383,7 +402,16 @@ def create_app(
                     except ValueError:
                         pass
 
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        headers = {
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers=headers,
+        )
 
     @app.post(
         "/admin/fault",
@@ -429,30 +457,30 @@ def create_app(
     )
     async def admin_get_fault():
         endpoints = get_default_endpoints()
-        results: Dict[str, FaultControlResponse] = {}
 
         async with httpx.AsyncClient(timeout=3.0) as client:
-            for dept in DepartmentName:
+            async def fetch_fault(dept: DepartmentName) -> Tuple[str, FaultControlResponse]:
                 dept_url = endpoints.get(dept.value)
                 if not dept_url:
-                    results[dept.value] = FaultControlResponse(
+                    return dept.value, FaultControlResponse(
                         department=dept, mode=FaultControlRequest().mode, message="Endpoint unconfigured"
                     )
-                    continue
 
                 fault_url = resolve_endpoint_url(dept_url).replace("/evaluate", "/fault")
                 try:
                     resp = await client.get(fault_url)
                     if resp.status_code == 200:
-                        results[dept.value] = FaultControlResponse.model_validate(resp.json())
-                    else:
-                        results[dept.value] = FaultControlResponse(
-                            department=dept, mode=FaultControlRequest().mode, message=f"HTTP {resp.status_code}"
-                        )
+                        return dept.value, FaultControlResponse.model_validate(resp.json())
+                    return dept.value, FaultControlResponse(
+                        department=dept, mode=FaultControlRequest().mode, message=f"HTTP {resp.status_code}"
+                    )
                 except Exception as exc:
-                    results[dept.value] = FaultControlResponse(
+                    return dept.value, FaultControlResponse(
                         department=dept, mode=FaultControlRequest().mode, message=f"Offline / Unreachable: {exc}"
                     )
+
+            pairs = await asyncio.gather(*[fetch_fault(d) for d in DepartmentName])
+            results: Dict[str, FaultControlResponse] = dict(pairs)
 
         return AdminFaultResponse(
             zoning=results["zoning"],

@@ -11,6 +11,8 @@ from uuid import UUID
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from jsonschema import Draft7Validator, FormatChecker
+from referencing import Registry, Resource
 
 from contract.models import (
     DecisionCode,
@@ -300,6 +302,9 @@ def test_permit_stream(sample_permit_payload):
     stream_resp = client.get(f"/permits/{permit_id}/stream")
     assert stream_resp.status_code == 200
     assert "text/event-stream" in stream_resp.headers["content-type"]
+    assert stream_resp.headers.get("cache-control") == "no-cache"
+    assert stream_resp.headers.get("connection") == "keep-alive"
+    assert stream_resp.headers.get("x-accel-buffering") == "no"
     content = stream_resp.text
     assert "event: trace_event" in content
     assert "event: done" in content
@@ -413,4 +418,146 @@ def test_admin_fault_endpoints():
     for dept_key in ("zoning", "fire", "water", "structural"):
         assert data[dept_key]["department"] == dept_key
         assert "mode" in data[dept_key]
+
+
+@pytest.mark.anyio
+async def test_in_flight_permit_status_schema_conformance(sample_permit_payload):
+    """Verify in-flight permit status has all 4 departments and passes JSON Schema validation."""
+    schemas_dir = Path("contract/schemas")
+    resources = [
+        (p.name, Resource.from_contents(json.loads(p.read_text())))
+        for p in schemas_dir.glob("*.json")
+    ]
+    registry = Registry().with_resources(resources)
+    validator = Draft7Validator(
+        json.loads((schemas_dir / "permit_status_response.schema.json").read_text()),
+        registry=registry,
+        format_checker=FormatChecker(),
+    )
+
+    unblock_event = asyncio.Event()
+
+    async def blocking_dispatcher(permit: Permit, trace_id: str, on_event=None):
+        await unblock_event.wait()
+        return mock_approved_dispatcher(permit, trace_id, on_event=on_event)
+
+    app = create_app(dispatcher_override=blocking_dispatcher)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        submit_resp = await client.post("/submit?wait=false", json=sample_permit_payload)
+        assert submit_resp.status_code == 202
+        permit_id = submit_resp.json()["permit_id"]
+
+        # In-flight query
+        status_resp = await client.get(f"/permits/{permit_id}?wait=false")
+        assert status_resp.status_code == 200
+        in_flight_data = status_resp.json()
+        assert in_flight_data["state"] in (SagaState.RECEIVED.value, SagaState.EVALUATING.value)
+        assert set(in_flight_data["department_results"].keys()) == {"zoning", "fire", "water", "structural"}
+        for dept in ("zoning", "fire", "water", "structural"):
+            assert in_flight_data["department_results"][dept]["status"] == "PENDING"
+            assert in_flight_data["department_results"][dept]["attempts"] == 0
+
+        # Validate against JSON schema
+        validator.validate(in_flight_data)
+
+        # Unblock and wait for completion
+        unblock_event.set()
+        done_resp = await client.get(f"/permits/{permit_id}?wait=true")
+        assert done_resp.status_code == 200
+        assert done_resp.json()["state"] == SagaState.DECIDED.value
+
+
+@pytest.mark.anyio
+async def test_background_task_lifecycle(sample_permit_payload):
+    """Verify background task is tracked and discarded when finished."""
+    unblock_event = asyncio.Event()
+
+    async def blocking_dispatcher(permit: Permit, trace_id: str, on_event=None):
+        await unblock_event.wait()
+        return mock_approved_dispatcher(permit, trace_id, on_event=on_event)
+
+    app = create_app(dispatcher_override=blocking_dispatcher)
+    orchestrator = app.state.orchestrator
+    assert len(orchestrator.background_tasks) == 0
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        submit_resp = await client.post("/submit?wait=false", json=sample_permit_payload)
+        assert submit_resp.status_code == 202
+        permit_id = submit_resp.json()["permit_id"]
+
+        # Task should be in background_tasks
+        assert len(orchestrator.background_tasks) == 1
+
+        # Unblock and wait
+        unblock_event.set()
+        await client.get(f"/permits/{permit_id}?wait=true")
+        await asyncio.sleep(0.01)
+        assert len(orchestrator.background_tasks) == 0
+
+
+@pytest.mark.anyio
+async def test_sse_stream_deduplication(sample_permit_payload):
+    """Verify SSE streaming deduplicates trace events replay vs live subscriber queues."""
+    from datetime import datetime, timezone
+    from contract.models import PermitStatusResponse, SpanId, TraceEvent, TraceEventType
+
+    app = create_app(dispatcher_override=mock_approved_dispatcher)
+    orchestrator = app.state.orchestrator
+    permit_id = "test-stream-dedup-001"
+
+    initial_dept_results = {
+        dept.value: DepartmentResultSummary(
+            status=DepartmentStatus.PENDING,
+            attempts=0,
+            latency_ms=0.0,
+            reasons=[],
+        )
+        for dept in DepartmentName
+    }
+    orchestrator.permits_db[permit_id] = PermitStatusResponse(
+        permit_id=permit_id,
+        trace_id="test-trace",
+        state=SagaState.EVALUATING,
+        final_decision=FinalDecision.PENDING,
+        decision_code=DecisionCode.PENDING,
+        created_at=datetime.now(timezone.utc),
+        department_results=initial_dept_results,
+    )
+
+    ev1 = TraceEvent(
+        event_id="evt-dup-1",
+        trace_id="test-trace",
+        permit_id=permit_id,
+        span=SpanId.ORCHESTRATOR,
+        parent_span=None,
+        type=TraceEventType.PERMIT_RECEIVED,
+        ts=datetime.now(timezone.utc),
+        detail={},
+    )
+    # Put event in past events
+    orchestrator.trace_events[permit_id] = [ev1]
+
+    # Also push the SAME event to the subscriber after queue connects, then None
+    async def feed_events():
+        await asyncio.sleep(0.05)
+        orchestrator.record_event(permit_id, ev1)
+        orchestrator.permits_db[permit_id].state = SagaState.DECIDED
+        orchestrator.permits_db[permit_id].final_decision = FinalDecision.APPROVED
+        orchestrator.close_stream_subscribers(permit_id)
+
+    task = asyncio.create_task(feed_events())
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        resp = await client.get(f"/permits/{permit_id}/stream")
+        assert resp.status_code == 200
+        text = resp.text
+        # Count occurrences of "evt-dup-1" in SSE output - must be exactly 1
+        assert text.count("evt-dup-1") == 1
+        assert "event: done" in text
+
+    await task
+
 
