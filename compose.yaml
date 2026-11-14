@@ -1,0 +1,93 @@
+name: permit-orchestrator
+
+x-department: &department
+  image: permit-orchestrator-department:local
+  build:
+    context: .
+    dockerfile: departments/Dockerfile
+  environment: &department-environment
+    GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  command:
+    - sh
+    - -c
+    - exec python -m uvicorn departments.app:app --host 0.0.0.0 --port "$${PORT}"
+  healthcheck: &department-health
+    test:
+      - CMD
+      - python
+      - -c
+      - 'import os, urllib.request; urllib.request.urlopen("http://127.0.0.1:" + os.environ["PORT"] + "/health", timeout=2)'
+    interval: 5s
+    timeout: 3s
+    start_period: 10s
+    retries: 5
+
+services:
+  orchestrator:
+    build:
+      context: .
+      dockerfile: dev/Dockerfile
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      DATABASE_PATH: /data/permits.db
+      ZONING_URL: http://zoning:8001
+      FIRE_URL: http://fire:8002
+      WATER_URL: http://water:8003
+      STRUCTURAL_URL: http://structural:8004
+    volumes:
+      - permit-data:/data
+    depends_on:
+      zoning:
+        condition: service_healthy
+      fire:
+        condition: service_healthy
+      water:
+        condition: service_healthy
+      structural:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      start_period: 10s
+      retries: 5
+
+  zoning:
+    <<: *department
+    ports: ["127.0.0.1:8001:8001"]
+    environment:
+      <<: *department-environment
+      DEPARTMENT: zoning
+      PORT: "8001"
+      RULE_FILE: /app/rules/zoning.yaml
+
+  fire:
+    <<: *department
+    ports: ["127.0.0.1:8002:8002"]
+    environment:
+      <<: *department-environment
+      DEPARTMENT: fire
+      PORT: "8002"
+      RULE_FILE: /app/rules/fire.yaml
+
+  water:
+    <<: *department
+    ports: ["127.0.0.1:8003:8003"]
+    environment:
+      <<: *department-environment
+      DEPARTMENT: water
+      PORT: "8003"
+      RULE_FILE: /app/rules/water.yaml
+
+  structural:
+    <<: *department
+    ports: ["127.0.0.1:8004:8004"]
+    environment:
+      <<: *department-environment
+      DEPARTMENT: structural
+      PORT: "8004"
+      RULE_FILE: /app/rules/structural.yaml
+
+volumes:
+  permit-data:
