@@ -619,6 +619,8 @@ def test_schema_validation_exception_emits_call_failed_and_span_completed():
         assert fail_evt.detail.get("final_status") == DepartmentStatus.ERROR.value
         assert span_evt.detail.get("status") == DepartmentStatus.ERROR.value
 
+    asyncio.run(_test())
+
 
 def test_async_callback_sequential_ordering():
     """Verify async callback is awaited sequentially and preserves trace event order."""
