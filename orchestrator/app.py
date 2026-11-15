@@ -41,6 +41,7 @@ from orchestrator.consensus import evaluate_consensus
 from orchestrator.dispatcher import get_default_endpoints, resolve_endpoint_url
 from orchestrator.handlers import (
     admin_router,
+    hello_router,
     intake_router,
     serve_index,
     stream_router,
@@ -344,6 +345,7 @@ def create_app(
     # Ensure production UI index route takes precedence over stream_router legacy GET /
     app.add_api_route("/", serve_index, methods=["GET"], response_class=HTMLResponse, include_in_schema=False)
 
+    app.include_router(hello_router)
     app.include_router(admin_router)
     app.include_router(submit_router)
     app.include_router(intake_router)
@@ -351,14 +353,10 @@ def create_app(
     app.include_router(ui_router)
 
     # Flatten included routes onto app.routes for direct route inspection compatibility
-    for router_item in (admin_router, submit_router, intake_router, stream_router, ui_router):
+    for router_item in (hello_router, admin_router, submit_router, intake_router, stream_router, ui_router):
         for route in router_item.routes:
             if route not in app.routes:
                 app.routes.append(route)
-
-    @app.get("/health")
-    async def health():
-        return {"status": "healthy"}
 
     return app
 
