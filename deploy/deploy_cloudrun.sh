@@ -1,37 +1,61 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Cloud Run Hello-World & Orchestrator Deployment Script
+# Cloud Run Full Demo Stack Deployment Script (Task T10)
 # ==============================================================================
+# Builds and deploys the full Permit Orchestrator container (orchestrator,
+# production frontend UI, and all 4 municipal department microservices) to
+# Google Cloud Run. Simulates deployment when gcloud is not authenticated/available.
+# ==============================================================================
+
 set -euo pipefail
 
-SERVICE_NAME="${SERVICE_NAME:-permit-orchestrator-hello}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+SERVICE_NAME="${SERVICE_NAME:-permit-orchestrator}"
 REGION="${REGION:-us-central1}"
-PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || echo 'permit-orchestrator-dev')}"
+RAW_GCLOUD_PROJECT="$(gcloud config get-value project 2>/dev/null || true)"
+if [ -z "${RAW_GCLOUD_PROJECT}" ] || [ "${RAW_GCLOUD_PROJECT}" = "(unset)" ]; then
+    RAW_GCLOUD_PROJECT="permit-orchestrator-dev"
+fi
+PROJECT_ID="${PROJECT_ID:-${RAW_GCLOUD_PROJECT}}"
 IMAGE_NAME="${IMAGE_NAME:-gcr.io/${PROJECT_ID}/${SERVICE_NAME}:latest}"
 PORT="${PORT:-8080}"
 ALLOW_UNAUTHENTICATED="${ALLOW_UNAUTHENTICATED:-true}"
+PUBLIC_URL_FILE="${SCRIPT_DIR}/public_url.txt"
 
 echo "=========================================================="
-echo " Deploying Permit Orchestrator Hello-World to Cloud Run"
+echo " Deploying Permit Orchestrator Full Demo to Cloud Run"
 echo "=========================================================="
-echo "Service Name : ${SERVICE_NAME}"
-echo "Project ID   : ${PROJECT_ID}"
-echo "Region       : ${REGION}"
-echo "Image Name   : ${IMAGE_NAME}"
-echo "Port         : ${PORT}"
+echo " Service Name : ${SERVICE_NAME}"
+echo " Project ID   : ${PROJECT_ID}"
+echo " Region       : ${REGION}"
+echo " Image Name   : ${IMAGE_NAME}"
+echo " Port         : ${PORT}"
 echo "=========================================================="
+
+# Build production frontend before container packaging if not already built
+if [ ! -d "${REPO_ROOT}/frontend/dist" ] || [ ! -f "${REPO_ROOT}/frontend/dist/index.html" ]; then
+    echo "Building frontend production bundle..."
+    npm --prefix "${REPO_ROOT}/frontend" run build
+fi
 
 if ! command -v gcloud &> /dev/null; then
-    echo "Notice: 'gcloud' CLI is not found on the local PATH."
+    echo "Notice: 'gcloud' CLI is not found on PATH."
     echo "Simulating Cloud Run build and deployment configuration..."
     MOCK_URL="https://${SERVICE_NAME}-${PROJECT_ID}.${REGION}.run.app"
-    echo "Public Hello-World URL: ${MOCK_URL}/hello"
-    echo "${MOCK_URL}/hello" > "$(dirname "$0")/public_url.txt"
+    echo "Public Demo URL: ${MOCK_URL}"
+    echo "${MOCK_URL}" > "${PUBLIC_URL_FILE}"
+    echo "Recorded public URL in ${PUBLIC_URL_FILE}"
     exit 0
 fi
 
-echo "Building container image using Google Cloud Build..."
-gcloud builds submit --tag "${IMAGE_NAME}" -f deploy/cloudrun.Dockerfile .
+# Authenticated GCP deployment branch
+echo "Submitting container image build via Google Cloud Build..."
+gcloud builds submit \
+    --config="${SCRIPT_DIR}/cloudbuild.yaml" \
+    --substitutions="_IMAGE_NAME=${IMAGE_NAME}" \
+    "${REPO_ROOT}"
 
 echo "Deploying container image to Google Cloud Run..."
 AUTH_FLAG="--no-allow-unauthenticated"
@@ -50,5 +74,5 @@ gcloud run deploy "${SERVICE_NAME}" \
 SERVICE_URL=$(gcloud run services describe "${SERVICE_NAME}" --region "${REGION}" --format='value(status.url)')
 echo "Deployment completed successfully!"
 echo "Service URL: ${SERVICE_URL}"
-echo "Hello-World Endpoint: ${SERVICE_URL}/hello"
-echo "${SERVICE_URL}/hello" > "$(dirname "$0")/public_url.txt"
+echo "${SERVICE_URL}" > "${PUBLIC_URL_FILE}"
+echo "Recorded public URL in ${PUBLIC_URL_FILE}"

@@ -1,4 +1,19 @@
-# Dockerfile for Permit Orchestrator on Google Cloud Run
+# ==============================================================================
+# Permit Orchestrator - Full Demo Multi-Service Cloud Run Container
+# ==============================================================================
+# Runs the orchestrator (FastAPI + Vite React SPA) alongside all 4 municipal
+# department microservices (zoning:8001, fire:8002, water:8003, structural:8004).
+# ==============================================================================
+
+# Stage 1: Build production frontend
+FROM node:20-slim AS frontend-builder
+WORKDIR /build
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci || npm install
+COPY frontend/ ./
+RUN npm run build
+
+# Stage 2: Multi-service Python runtime
 FROM python:3.13-slim
 
 # Install uv package manager
@@ -18,14 +33,22 @@ RUN uv sync --locked --no-dev --no-install-project \
     && useradd --uid 10001 --create-home appuser \
     && mkdir -p /data && chown -R appuser:appuser /data
 
-# Copy application source code
+# Copy application source code and rules
 COPY contract ./contract
 COPY orchestrator ./orchestrator
+COPY departments ./departments
 COPY rules ./rules
+
+# Copy compiled frontend production distribution from frontend-builder
+COPY --from=frontend-builder /build/dist ./frontend/dist
+
+# Copy deployment and startup runner
+COPY deploy/start_cloudrun.sh ./deploy/start_cloudrun.sh
+RUN chmod +x ./deploy/start_cloudrun.sh && chown -R appuser:appuser /app
 
 USER appuser
 
 EXPOSE 8080
 
-# Cloud Run injects $PORT (default 8080)
-CMD ["sh", "-c", "exec python -m uvicorn orchestrator.app:app --host 0.0.0.0 --port ${PORT:-8080}"]
+# Launch multi-service runner on Cloud Run $PORT (default 8080)
+ENTRYPOINT ["/bin/bash", "./deploy/start_cloudrun.sh"]
