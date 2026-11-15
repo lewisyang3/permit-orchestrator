@@ -469,34 +469,36 @@ async def submit_permit(
         existing_state: SagaState = SagaState.RECEIVED
 
         if has_client_id:
-            # 1. Check in-memory submitted permits
-            if permit_id in submitted_permits:
-                is_known = True
-                existing_trace_id = submitted_permits[permit_id].trace_id
-
-            # 2. Check in SQLite DB
-            if not is_known and db_module is not None and hasattr(db_module, "get_permit"):
-                try:
-                    db_rec = db_module.get_permit(permit_id, db_path=db_path)
-                    if db_rec is not None:
-                        is_known = True
-                        existing_trace_id = db_rec.trace_id
-                        existing_state = db_rec.state
-                except Exception:
-                    pass
-
-            # 3. Check in state_sink
-            if not is_known and state_sink is not None and hasattr(state_sink, "permits_db"):
-                mem_rec = state_sink.permits_db.get(permit_id)
-                if mem_rec is not None:
+            # 1. Check state_sink in-memory permits_db if state_sink is present
+            if state_sink is not None and hasattr(state_sink, "permits_db"):
+                if permit_id in state_sink.permits_db:
                     is_known = True
+                    mem_rec = state_sink.permits_db[permit_id]
                     existing_trace_id = getattr(mem_rec, "trace_id", None)
                     existing_state = getattr(mem_rec, "state", SagaState.RECEIVED)
 
-            # 4. Check in-flight tasks / events
+            # 2. Check SQLite DB if db_path is configured or state_sink is not used
+            if not is_known and (db_path is not None or state_sink is None):
+                if db_module is not None and hasattr(db_module, "get_permit"):
+                    try:
+                        db_rec = db_module.get_permit(permit_id, db_path=db_path)
+                        if db_rec is not None:
+                            is_known = True
+                            existing_trace_id = db_rec.trace_id
+                            existing_state = db_rec.state
+                    except Exception:
+                        pass
+
+            # 3. Check in-flight tasks / events
             if not is_known and (permit_id in permit_events or permit_id in permit_tasks):
                 is_known = True
                 existing_trace_id = permit_trace_ids.get(permit_id)
+
+            # 4. Check app-scoped or module submitted permits fallback
+            if not is_known and state_sink is None and db_path is None:
+                if permit_id in submitted_permits:
+                    is_known = True
+                    existing_trace_id = submitted_permits[permit_id].trace_id
 
         if is_known:
             if not existing_trace_id:

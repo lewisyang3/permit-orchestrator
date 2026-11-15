@@ -85,9 +85,38 @@ async def root() -> Response:
     return await serve_index()
 
 
+STATIC_EXTENSIONS = {
+    ".js",
+    ".mjs",
+    ".css",
+    ".map",
+    ".json",
+    ".wasm",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".svg",
+    ".ico",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
+    ".txt",
+    ".toml",
+    ".py",
+}
+
+
 @router.get("/assets/{file_path:path}", summary="Serve frontend static assets")
 async def serve_asset(file_path: str) -> Response:
     """Serve static asset files (JS, CSS, images) from frontend/dist/assets."""
+    if ".." in file_path or file_path.startswith("/"):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Asset not found",
+        )
+
     assets_dir = get_assets_dir().resolve()
     target_file = (assets_dir / file_path).resolve()
 
@@ -131,5 +160,12 @@ async def spa_fallback(full_path: str, request: Request) -> Response:
             return FileResponse(candidate_file)
     except ValueError:
         pass
+
+    # Requests with static asset/code extensions that do not exist should 404
+    if Path(full_path).suffix.lower() in STATIC_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found",
+        )
 
     return await serve_index()
