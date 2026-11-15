@@ -6,6 +6,9 @@ import {
   Permit,
   SubmitPermitResponse,
   PermitStatusResponse,
+  IntakeParseRequest,
+  IntakeParseResponse,
+  SamplePlanInfo,
 } from '../types';
 
 const BASE_URL = '';
@@ -77,6 +80,37 @@ export async function getPermitStatus(permitId: string): Promise<PermitStatusRes
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Get permit status failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
+export async function parseIntakePlan(req: IntakeParseRequest): Promise<IntakeParseResponse> {
+  const res = await fetch(`${BASE_URL}/intake/parse`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Plan parsing failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
+export async function fetchSamplePlans(): Promise<SamplePlanInfo[]> {
+  const res = await fetch(`${BASE_URL}/intake/sample-plans`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to fetch sample plans (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
+export async function fetchSamplePlan(planId: string): Promise<SamplePlanInfo> {
+  const res = await fetch(`${BASE_URL}/intake/sample-plans/${planId}`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to fetch sample plan ${planId} (${res.status}): ${text}`);
   }
   return res.json();
 }

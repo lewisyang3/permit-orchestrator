@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Permit } from '../types';
+import React, { useState, useRef, useEffect } from 'react';
+import { Permit, SamplePlanInfo, IntakeParseResponse } from '../types';
+import { parseIntakePlan, fetchSamplePlans, fetchSamplePlan } from '../utils/api';
 import {
   FileText,
   MapPin,
@@ -10,6 +11,11 @@ import {
   Home,
   Send,
   Code,
+  UploadCloud,
+  Sparkles,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react';
 
 interface PermitFormProps {
@@ -31,6 +37,60 @@ export const PermitForm: React.FC<PermitFormProps> = ({
   const [rawJson, setRawJson] = useState(JSON.stringify(permit, null, 2));
   const [jsonError, setJsonError] = useState<string | null>(null);
 
+  // Intake Plan & PDF parsing state (Task T13)
+  const [isParsingPlan, setIsParsingPlan] = useState(false);
+  const [intakeResult, setIntakeResult] = useState<IntakeParseResponse | null>(null);
+  const [intakeError, setIntakeError] = useState<string | null>(null);
+  const [samplePlans, setSamplePlans] = useState<SamplePlanInfo[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Keep rawJson in sync with permit updates
+  useEffect(() => {
+    setRawJson(JSON.stringify(permit, null, 2));
+  }, [permit]);
+
+  // Load sample plan catalog on mount
+  useEffect(() => {
+    let mounted = true;
+    fetchSamplePlans()
+      .then((plans) => {
+        if (mounted && plans && plans.length > 0) {
+          setSamplePlans(plans);
+        }
+      })
+      .catch(() => {
+        // Fallback default sample plans when backend offline
+        if (mounted) {
+          setSamplePlans([
+            {
+              id: 'residential_addition',
+              title: 'Residential Rear Addition',
+              filename: 'residential_rear_addition_plan.txt',
+              description: 'Single family residential addition (R-1, 1-story wood frame).',
+              mime_type: 'text/plain',
+            },
+            {
+              id: 'commercial_restaurant',
+              title: 'Commercial Restaurant Patio',
+              filename: 'commercial_restaurant_plan.txt',
+              description: 'Commercial restaurant renovation (C-1, missing sprinklers).',
+              mime_type: 'text/plain',
+            },
+            {
+              id: 'industrial_warehouse',
+              title: 'Storage Warehouse Modernization',
+              filename: 'warehouse_modernization_plan.txt',
+              description: 'Industrial logistics warehouse (M-1, deep pile foundation).',
+              mime_type: 'text/plain',
+            },
+          ]);
+        }
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const handleJsonChange = (val: string) => {
     setRawJson(val);
     try {
@@ -39,6 +99,82 @@ export const PermitForm: React.FC<PermitFormProps> = ({
       onChange(parsed);
     } catch (err: any) {
       setJsonError(err.message);
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsParsingPlan(true);
+    setIntakeError(null);
+
+    const isPdf = file.name.toLowerCase().endsWith('.pdf');
+    const reader = new FileReader();
+
+    if (isPdf) {
+      reader.onload = async () => {
+        try {
+          const dataUrl = reader.result as string;
+          const base64Data = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+          const res = await parseIntakePlan({
+            filename: file.name,
+            content_base64: base64Data,
+            mime_type: 'application/pdf',
+          });
+          setIntakeResult(res);
+          onChange(res.permit);
+          setViewMode('visual');
+        } catch (err: any) {
+          setIntakeError(err.message || 'Failed to parse plan PDF');
+        } finally {
+          setIsParsingPlan(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+      };
+      reader.readAsDataURL(file);
+    } else {
+      reader.onload = async () => {
+        try {
+          const text = reader.result as string;
+          const res = await parseIntakePlan({
+            filename: file.name,
+            content_text: text,
+            mime_type: 'text/plain',
+          });
+          setIntakeResult(res);
+          onChange(res.permit);
+          setViewMode('visual');
+        } catch (err: any) {
+          setIntakeError(err.message || 'Failed to parse plan file');
+        } finally {
+          setIsParsingPlan(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const handleSelectSample = async (planId: string) => {
+    if (!planId) return;
+    setIsParsingPlan(true);
+    setIntakeError(null);
+
+    try {
+      const detail = await fetchSamplePlan(planId);
+      const res = await parseIntakePlan({
+        filename: detail.filename,
+        content_text: detail.sample_text,
+        mime_type: detail.mime_type,
+      });
+      setIntakeResult(res);
+      onChange(res.permit);
+      setViewMode('visual');
+    } catch (err: any) {
+      setIntakeError(err.message || 'Failed to parse sample plan');
+    } finally {
+      setIsParsingPlan(false);
     }
   };
 
@@ -56,7 +192,49 @@ export const PermitForm: React.FC<PermitFormProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Hidden File Input for PDF / Plan uploads */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.txt,.md"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+
+          {/* Upload Plan / PDF button (Task T13) */}
+          <button
+            type="button"
+            disabled={isParsingPlan}
+            onClick={() => fileInputRef.current?.click()}
+            className="px-3 py-1 rounded-lg bg-indigo-600/80 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center space-x-1.5 transition-colors disabled:opacity-50 shadow-sm border border-indigo-500/40"
+          >
+            {isParsingPlan ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <UploadCloud className="h-3.5 w-3.5" />
+            )}
+            <span>{isParsingPlan ? 'Parsing Plan...' : 'Upload Plan / PDF'}</span>
+          </button>
+
+          {/* Quick Sample Selector */}
+          <select
+            onChange={(e) => {
+              if (e.target.value) handleSelectSample(e.target.value);
+            }}
+            defaultValue=""
+            className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1 focus:outline-none focus:border-indigo-500"
+          >
+            <option value="" disabled>
+              Load Sample Plan...
+            </option>
+            {samplePlans.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.title}
+              </option>
+            ))}
+          </select>
+
           {/* Toggle Visual / JSON */}
           <div className="bg-slate-800 p-0.5 rounded-lg border border-slate-700 flex text-xs">
             <button
@@ -98,6 +276,66 @@ export const PermitForm: React.FC<PermitFormProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Intake Status Banner (Task T13) */}
+      {intakeResult && (
+        <div className="mx-4 mt-3 p-3 rounded-lg bg-slate-950/80 border border-emerald-500/40 text-xs text-slate-200 flex items-start justify-between gap-3 shadow-inner">
+          <div className="flex items-start space-x-2.5">
+            <div className="p-1 rounded-md bg-emerald-500/20 text-emerald-400 shrink-0 mt-0.5">
+              <CheckCircle2 className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold text-emerald-300">Plan Parsed Successfully</span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold flex items-center space-x-1 ${
+                    intakeResult.extracted_by.includes('gemini')
+                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+                      : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  }`}
+                >
+                  <Sparkles className="h-2.5 w-2.5" />
+                  <span>{intakeResult.extracted_by}</span>
+                </span>
+                <span className="text-slate-400 font-mono text-[11px]">
+                  Source: {intakeResult.filename}
+                </span>
+              </div>
+              <p className="text-slate-400 mt-1">
+                Extracted all parameters for Zoning, Fire, Water, and Structural reviews into the permit payload.
+              </p>
+              {intakeResult.warnings && intakeResult.warnings.length > 0 && (
+                <div className="mt-1 text-[11px] text-amber-300">
+                  Note: {intakeResult.warnings.join('; ')}
+                </div>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIntakeResult(null)}
+            className="text-slate-500 hover:text-slate-300 text-xs font-bold px-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {intakeError && (
+        <div className="mx-4 mt-3 p-3 rounded-lg bg-rose-950/50 border border-rose-500/40 text-xs text-rose-200 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />
+            <span>{intakeError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIntakeError(null)}
+            className="text-rose-400 hover:text-rose-200 text-xs font-bold px-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Content */}
       <div className="p-4">
