@@ -38,7 +38,7 @@ from contract.models import (
 )
 from orchestrator.consensus import evaluate_consensus
 from orchestrator.dispatcher import get_default_endpoints, resolve_endpoint_url
-from orchestrator.handlers import admin_router
+from orchestrator.handlers import admin_router, submit_router
 
 
 class OrchestratorApp:
@@ -272,6 +272,7 @@ def create_app(
     http_client: Optional[httpx.AsyncClient] = None,
     backoff_delays: Optional[Sequence[float]] = None,
     timeout_seconds: Optional[float] = None,
+    db_path: Optional[Union[Path, str]] = None,
 ) -> FastAPI:
     """Create and configure the FastAPI orchestrator application."""
     app = FastAPI(title="Permit Orchestrator", version="1.0.0")
@@ -297,67 +298,23 @@ def create_app(
         orchestrator_state.custom_consensus = consensus_override
 
     app.state.orchestrator = orchestrator_state
+    app.state.dispatcher_override = dispatcher_override
+    app.state.consensus_override = consensus_override
+    app.state.db_path = db_path
+
+    # Initialize SQLite database
+    try:
+        from orchestrator import db
+        db.init_db(db_path)
+    except Exception:
+        pass
+
     app.include_router(admin_router)
+    app.include_router(submit_router)
 
     @app.get("/health")
     async def health():
         return {"status": "healthy"}
-
-    @app.post(
-        "/submit",
-        response_model=SubmitPermitResponse,
-        status_code=status.HTTP_202_ACCEPTED,
-        summary="Submit permit application",
-    )
-    async def submit_permit(
-        permit: Permit,
-        wait: bool = Query(
-            False,
-            description="Whether to await saga fan-out and consensus before returning",
-        ),
-    ):
-        permit_id = permit.permit_id if permit.permit_id else str(uuid4())
-        if permit.permit_id != permit_id:
-            permit = permit.model_copy(update={"permit_id": permit_id})
-        trace_id = str(uuid4())
-
-        initial_dept_results = {
-            dept.value: DepartmentResultSummary(
-                status=DepartmentStatus.PENDING,
-                attempts=0,
-                latency_ms=0.0,
-                reasons=[],
-            )
-            for dept in DepartmentName
-        }
-
-        initial_status = PermitStatusResponse(
-            permit_id=permit_id,
-            trace_id=trace_id,
-            state=SagaState.RECEIVED,
-            final_decision=FinalDecision.PENDING,
-            decision_code=DecisionCode.PENDING,
-            created_at=datetime.now(timezone.utc),
-            department_results=initial_dept_results,
-        )
-        orchestrator_state.permits_db[permit_id] = initial_status
-        event = asyncio.Event()
-        orchestrator_state.permit_events[permit_id] = event
-
-        saga_coro = orchestrator_state.run_saga(permit_id, trace_id, permit)
-        if wait:
-            await saga_coro
-        else:
-            task = asyncio.create_task(saga_coro)
-            orchestrator_state.background_tasks.add(task)
-            task.add_done_callback(orchestrator_state.background_tasks.discard)
-
-        return SubmitPermitResponse(
-            permit_id=permit_id,
-            trace_id=trace_id,
-            state=SagaState.RECEIVED,
-            stream_url=f"/permits/{permit_id}/stream",
-        )
 
     @app.get(
         "/permits/{permit_id}",

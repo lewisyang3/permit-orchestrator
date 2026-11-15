@@ -53,6 +53,13 @@ def anyio_backend():
     return "asyncio"
 
 
+@pytest.fixture(autouse=True)
+def reset_broadcaster():
+    get_broadcaster().clear()
+    yield
+    get_broadcaster().clear()
+
+
 @pytest.fixture
 def sample_permit_dict() -> dict:
     fixture_path = Path("contract/fixtures/permit_approved.json")
@@ -187,6 +194,20 @@ async def test_event_broadcaster_unsubscribe():
     assert not q2.empty()
     rec2 = await q2.get()
     assert rec2.event_id == "evt-2"
+
+
+@pytest.mark.anyio
+async def test_event_broadcaster_late_subscriber_receives_none_immediately():
+    broadcaster = EventBroadcaster()
+    permit_id = "test-permit-closed"
+
+    # Close first
+    broadcaster.close(permit_id)
+
+    # Late subscriber connects after saga close
+    q = broadcaster.subscribe(permit_id)
+    val = await q.get()
+    assert val is None
 
 
 # =====================================================================
@@ -492,3 +513,72 @@ async def test_integration_with_stub_department_dispatcher(sample_permit_dict, t
         assert rec.final_decision == FinalDecision.APPROVED
         assert rec.decision_code == DecisionCode.ALL_DEPARTMENTS_APPROVED
         assert len(rec.department_results) == 4
+
+
+@pytest.mark.anyio
+async def test_in_flight_permit_has_all_four_departments(sample_permit_dict, test_db):
+    """Verify in-flight status has all 4 required departments to satisfy JSON schema."""
+    from orchestrator.app import OrchestratorApp
+
+    orchestrator_state = OrchestratorApp()
+    app = FastAPI()
+    app.include_router(router)
+    app.state.db_path = test_db
+    app.state.orchestrator = orchestrator_state
+
+    # Use a lingering dispatcher to verify in-flight status
+    gate = asyncio.Event()
+
+    async def blocking_dispatcher(permit: Permit, trace_id: str, on_event=None):
+        await gate.wait()
+        return {
+            "zoning": make_dept_summary(DepartmentStatus.APPROVED),
+            "fire": make_dept_summary(DepartmentStatus.APPROVED),
+            "water": make_dept_summary(DepartmentStatus.APPROVED),
+            "structural": make_dept_summary(DepartmentStatus.APPROVED),
+        }
+
+    app.state.dispatcher_override = blocking_dispatcher
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        resp = await client.post("/submit", json=sample_permit_dict)
+        assert resp.status_code == 202
+        permit_id = resp.json()["permit_id"]
+
+        in_flight = orchestrator_state.permits_db[permit_id]
+        assert set(in_flight.department_results.keys()) == {"zoning", "fire", "water", "structural"}
+        for dept_res in in_flight.department_results.values():
+            assert dept_res.status == DepartmentStatus.PENDING
+
+        gate.set()
+        # Wait for completion
+        ev = get_permit_event(permit_id)
+        if ev:
+            await asyncio.wait_for(ev.wait(), timeout=2.0)
+
+
+@pytest.mark.anyio
+async def test_permit_tasks_cleanup_on_completion(sample_permit_dict, test_db):
+    """Verify background tasks and events are cleaned up from global dictionaries."""
+    from orchestrator.handlers.submit import permit_tasks, permit_events
+
+    app = FastAPI()
+    app.include_router(router)
+    app.state.db_path = test_db
+    app.state.dispatcher_override = mock_approved_dispatcher
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        resp = await client.post("/submit", json=sample_permit_dict)
+        assert resp.status_code == 202
+        permit_id = resp.json()["permit_id"]
+
+        ev = get_permit_event(permit_id)
+        assert ev is not None
+        await asyncio.wait_for(ev.wait(), timeout=2.0)
+        # Allow event loop turn for done callbacks
+        await asyncio.sleep(0.05)
+
+        assert permit_id not in permit_tasks
+        assert permit_id not in permit_events

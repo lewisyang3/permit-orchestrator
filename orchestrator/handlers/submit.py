@@ -29,7 +29,9 @@ from fastapi import APIRouter, Query, Request, status
 
 from contract.models import (
     DecisionCode,
+    DepartmentName,
     DepartmentResultSummary,
+    DepartmentStatus,
     FinalDecision,
     Permit,
     PermitStatusResponse,
@@ -50,11 +52,19 @@ class EventBroadcaster:
 
     def __init__(self) -> None:
         self._subscribers: Dict[str, List[asyncio.Queue[Optional[TraceEvent]]]] = {}
+        self._closed_permits: set[str] = set()
         self._lock = asyncio.Lock()
+
+    def open(self, permit_id: str) -> None:
+        """Reset closed state for a permit when a new saga starts."""
+        self._closed_permits.discard(permit_id)
 
     def subscribe(self, permit_id: str) -> asyncio.Queue[Optional[TraceEvent]]:
         """Subscribe to live TraceEvents for a specific permit_id."""
         q: asyncio.Queue[Optional[TraceEvent]] = asyncio.Queue()
+        if permit_id in self._closed_permits:
+            q.put_nowait(None)
+            return q
         if permit_id not in self._subscribers:
             self._subscribers[permit_id] = []
         self._subscribers[permit_id].append(q)
@@ -72,6 +82,7 @@ class EventBroadcaster:
 
     def publish(self, permit_id: str, event: TraceEvent) -> None:
         """Publish a TraceEvent to all active subscribers for the permit."""
+        self._closed_permits.discard(permit_id)
         queues = list(self._subscribers.get(permit_id, []))
         for q in queues:
             try:
@@ -81,6 +92,7 @@ class EventBroadcaster:
 
     def close(self, permit_id: str) -> None:
         """Signal completion to all subscribers for the permit by pushing None."""
+        self._closed_permits.add(permit_id)
         queues = self._subscribers.pop(permit_id, [])
         for q in queues:
             try:
@@ -93,6 +105,7 @@ class EventBroadcaster:
         for permit_id in list(self._subscribers.keys()):
             self.close(permit_id)
         self._subscribers.clear()
+        self._closed_permits.clear()
 
 
 # Default singleton broadcaster instance
@@ -114,20 +127,6 @@ def get_permit_event(permit_id: str) -> Optional[asyncio.Event]:
     return permit_events.get(permit_id)
 
 
-def _safe_db_call(fn: Optional[Callable], *args: Any, **kwargs: Any) -> Any:
-    """Execute a DB helper function safely, handling any exception or async returns."""
-    if fn is None:
-        return None
-    try:
-        res = fn(*args, **kwargs)
-        if inspect.isawaitable(res):
-            return asyncio.create_task(res)
-        return res
-    except Exception as exc:
-        logger.warning(f"DB call {getattr(fn, '__name__', str(fn))} failed: {exc}")
-        return None
-
-
 async def run_permit_saga(
     permit_id: str,
     trace_id: str,
@@ -143,6 +142,8 @@ async def run_permit_saga(
 ) -> None:
     """Execute asynchronous saga: department fan-out, consensus, SQLite persistence, and trace event broadcasting."""
     active_broadcaster = broadcaster_inst or broadcaster
+    if hasattr(active_broadcaster, "open"):
+        active_broadcaster.open(permit_id)
 
     # Resolve DB module
     if db_module is None:
@@ -154,7 +155,10 @@ async def run_permit_saga(
     def handle_trace_event(ev: TraceEvent) -> None:
         # 1. SQLite append (append-only)
         if db_module is not None and hasattr(db_module, "append_trace_event"):
-            _safe_db_call(db_module.append_trace_event, ev, db_path=db_path)
+            try:
+                db_module.append_trace_event(ev, db_path=db_path)
+            except Exception as exc:
+                logger.warning(f"Failed to append trace event {ev.event_id} to DB: {exc}")
         # 2. In-memory sink if provided
         if state_sink is not None and hasattr(state_sink, "record_event"):
             try:
@@ -167,7 +171,7 @@ async def run_permit_saga(
     try:
         # Mark state as EVALUATING in DB and state_sink
         if db_module is not None and hasattr(db_module, "update_permit_state"):
-            _safe_db_call(db_module.update_permit_state, permit_id, SagaState.EVALUATING, db_path=db_path)
+            db_module.update_permit_state(permit_id, SagaState.EVALUATING, db_path=db_path)
 
         if state_sink is not None and hasattr(state_sink, "permits_db") and permit_id in state_sink.permits_db:
             state_sink.permits_db[permit_id].state = SagaState.EVALUATING
@@ -202,10 +206,18 @@ async def run_permit_saga(
             else:
                 department_results = disp_res
         else:
+            http_client = getattr(state_sink, "http_client", None)
+            backoff_delays = getattr(state_sink, "backoff_delays", None)
+            timeout_seconds = getattr(state_sink, "timeout_seconds", None)
+            effective_endpoints = endpoints or getattr(state_sink, "endpoints", None)
+
             department_results = await dispatch_permit(
                 permit=permit,
                 trace_id=trace_id,
-                endpoints=endpoints,
+                endpoints=effective_endpoints,
+                client=http_client,
+                backoff_delays=backoff_delays,
+                timeout_seconds=timeout_seconds,
                 on_event=handle_trace_event,
             )
 
@@ -223,7 +235,10 @@ async def run_permit_saga(
             },
         )
         if db_module is not None and hasattr(db_module, "append_trace_event"):
-            _safe_db_call(db_module.append_trace_event, consensus_event, db_path=db_path)
+            try:
+                db_module.append_trace_event(consensus_event, db_path=db_path)
+            except Exception as exc:
+                logger.warning(f"Failed to append consensus event: {exc}")
         if state_sink is not None and hasattr(state_sink, "record_event"):
             try:
                 state_sink.record_event(permit_id, consensus_event)
@@ -242,8 +257,7 @@ async def run_permit_saga(
         # 4. Persist department results in SQLite
         if db_module is not None and hasattr(db_module, "save_department_result"):
             for dept_name, res in department_results.items():
-                _safe_db_call(
-                    db_module.save_department_result,
+                db_module.save_department_result(
                     permit_id=permit_id,
                     department=dept_name,
                     status=res.status if isinstance(res.status, str) else res.status.value,
@@ -256,8 +270,7 @@ async def run_permit_saga(
 
         # 5. Update permit record in SQLite with final_decision, decision_code, decided_at
         if db_module is not None and hasattr(db_module, "update_permit_decision"):
-            _safe_db_call(
-                db_module.update_permit_decision,
+            db_module.update_permit_decision(
                 permit_id=permit_id,
                 state=SagaState.DECIDED,
                 final_decision=final_decision,
@@ -295,7 +308,10 @@ async def run_permit_saga(
             },
         )
         if db_module is not None and hasattr(db_module, "append_trace_event"):
-            _safe_db_call(db_module.append_trace_event, decided_event, db_path=db_path)
+            try:
+                db_module.append_trace_event(decided_event, db_path=db_path)
+            except Exception as exc:
+                logger.warning(f"Failed to append decided event: {exc}")
         if state_sink is not None and hasattr(state_sink, "record_event"):
             try:
                 state_sink.record_event(permit_id, decided_event)
@@ -310,16 +326,18 @@ async def run_permit_saga(
         logger.error(err_summary, exc_info=True)
 
         if db_module is not None and hasattr(db_module, "update_permit_decision"):
-            _safe_db_call(
-                db_module.update_permit_decision,
-                permit_id=permit_id,
-                state=SagaState.DECIDED,
-                final_decision=FinalDecision.REJECTED,
-                decision_code=DecisionCode.INCOMPLETE_REVIEWS,
-                decision_summary=err_summary,
-                decided_at=decided_time,
-                db_path=db_path,
-            )
+            try:
+                db_module.update_permit_decision(
+                    permit_id=permit_id,
+                    state=SagaState.DECIDED,
+                    final_decision=FinalDecision.REJECTED,
+                    decision_code=DecisionCode.INCOMPLETE_REVIEWS,
+                    decision_summary=err_summary,
+                    decided_at=decided_time,
+                    db_path=db_path,
+                )
+            except Exception as dberr:
+                logger.error(f"Failed to update fail-safe decision in DB: {dberr}")
 
         if state_sink is not None and hasattr(state_sink, "permits_db") and permit_id in state_sink.permits_db:
             rec = state_sink.permits_db[permit_id]
@@ -346,7 +364,10 @@ async def run_permit_saga(
             },
         )
         if db_module is not None and hasattr(db_module, "append_trace_event"):
-            _safe_db_call(db_module.append_trace_event, fail_event, db_path=db_path)
+            try:
+                db_module.append_trace_event(fail_event, db_path=db_path)
+            except Exception as dberr:
+                logger.error(f"Failed to append fail_event in DB: {dberr}")
         if state_sink is not None and hasattr(state_sink, "record_event"):
             try:
                 state_sink.record_event(permit_id, fail_event)
@@ -408,8 +429,7 @@ async def submit_permit(
 
     # 1. Persist permit record to SQLite with SagaState.RECEIVED
     if db_module is not None and hasattr(db_module, "save_permit"):
-        _safe_db_call(
-            db_module.save_permit,
+        db_module.save_permit(
             permit_id=permit_id,
             payload=permit,
             state=SagaState.RECEIVED,
@@ -434,12 +454,14 @@ async def submit_permit(
         },
     )
     if db_module is not None and hasattr(db_module, "append_trace_event"):
-        _safe_db_call(db_module.append_trace_event, root_event, db_path=db_path)
+        db_module.append_trace_event(root_event, db_path=db_path)
 
     # Active broadcaster
     active_broadcaster = broadcaster
     if request is not None and hasattr(request.app.state, "broadcaster"):
         active_broadcaster = request.app.state.broadcaster
+    if hasattr(active_broadcaster, "open"):
+        active_broadcaster.open(permit_id)
 
     active_broadcaster.publish(permit_id, root_event)
 
@@ -459,6 +481,15 @@ async def submit_permit(
             if state_sink.custom_consensus is not None:
                 consensus_fn = state_sink.custom_consensus
             # Initialize in-memory status record for backward compatibility
+            initial_dept_results = {
+                dept.value: DepartmentResultSummary(
+                    status=DepartmentStatus.PENDING,
+                    attempts=0,
+                    latency_ms=0.0,
+                    reasons=[],
+                )
+                for dept in DepartmentName
+            }
             initial_status = PermitStatusResponse(
                 permit_id=permit_id,
                 trace_id=trace_id,
@@ -466,7 +497,7 @@ async def submit_permit(
                 final_decision=FinalDecision.PENDING,
                 decision_code=DecisionCode.PENDING,
                 created_at=created_at,
-                department_results={},
+                department_results=initial_dept_results,
             )
             state_sink.permits_db[permit_id] = initial_status
             state_sink.record_event(permit_id, root_event)
@@ -491,10 +522,18 @@ async def submit_permit(
     )
 
     if wait:
-        await saga_coro
+        try:
+            await saga_coro
+        finally:
+            permit_events.pop(permit_id, None)
     else:
         task = asyncio.create_task(saga_coro)
+        if state_sink is not None and hasattr(state_sink, "background_tasks"):
+            state_sink.background_tasks.add(task)
+            task.add_done_callback(state_sink.background_tasks.discard)
         permit_tasks[permit_id] = task
+        task.add_done_callback(lambda _: permit_tasks.pop(permit_id, None))
+        task.add_done_callback(lambda _: permit_events.pop(permit_id, None))
 
     return SubmitPermitResponse(
         permit_id=permit_id,
