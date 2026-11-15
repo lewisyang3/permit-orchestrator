@@ -6,6 +6,9 @@ import {
   restoreAllDepartmentsHealthy,
   submitPermit,
   getPermitStatus,
+  parseIntakePlan,
+  fetchSamplePlans,
+  fetchSamplePlan,
 } from '../utils/api';
 import { FIXTURE_SCENARIOS } from '../fixtures';
 
@@ -143,6 +146,59 @@ describe('API Client utilities (Task T9 / PR #15 fixes)', () => {
 
       const res = await getPermitStatus('pm-123');
       expect(res.final_decision).toBe('APPROVED');
+    });
+  });
+
+  describe('Intake API endpoints (Task T13)', () => {
+    it('posts to /intake/parse and receives parsed permit payload', async () => {
+      const samplePermit = FIXTURE_SCENARIOS.approved.permit;
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          permit: samplePermit,
+          filename: 'plan.pdf',
+          file_path: 'uploads/pm-intake-1_plan.pdf',
+          extracted_by: 'gemini-2.5-flash',
+          warnings: [],
+        }),
+      } as Response);
+
+      const res = await parseIntakePlan({
+        filename: 'plan.pdf',
+        content_base64: 'JVBER...',
+        mime_type: 'application/pdf',
+      });
+
+      expect(fetchSpy).toHaveBeenCalledWith('/intake/parse', expect.objectContaining({ method: 'POST' }));
+      expect(res.extracted_by).toBe('gemini-2.5-flash');
+      expect(res.permit.project_title).toBe(samplePermit.project_title);
+    });
+
+    it('fetches sample plans catalog and individual plan detail', async () => {
+      vi.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => [
+            { id: 'sample1', title: 'Sample 1', filename: 's1.txt', description: 'Desc', mime_type: 'text/plain' },
+          ],
+        } as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            id: 'sample1',
+            title: 'Sample 1',
+            filename: 's1.txt',
+            description: 'Desc',
+            mime_type: 'text/plain',
+            sample_text: 'Plan text',
+          }),
+        } as Response);
+
+      const catalog = await fetchSamplePlans();
+      expect(catalog.length).toBe(1);
+
+      const detail = await fetchSamplePlan('sample1');
+      expect(detail.sample_text).toBe('Plan text');
     });
   });
 });
