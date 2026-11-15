@@ -28,5 +28,5 @@ filterwarnings = [
     "error",
     "ignore::pytest.PytestUnraisableExceptionWarning",
     "ignore:Unclosed <MemoryObject:ResourceWarning",
-    "ignore:.*:DeprecationWarning:starlette.*",
+    "ignore::starlette.exceptions.StarletteDeprecationWarning",
 ]

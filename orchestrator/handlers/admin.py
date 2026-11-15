@@ -132,7 +132,7 @@ async def admin_set_fault(
     """Forward fault control configuration to target department's /fault endpoint."""
     if not req.department:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Department is required for admin fault injection",
         )
 
