@@ -134,7 +134,7 @@ export const ConsensusBanner: React.FC<ConsensusBannerProps> = ({ trace, onViewT
             {isIncomplete
               ? 'Refused: Missing Department Review'
               : isApproved
-              ? 'Consensus: 4/4 Signed Off'
+              ? '4/4 Signed Off'
               : 'Rejected: Code Violations'}
           </span>
         </div>

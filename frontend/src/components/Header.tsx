@@ -1,5 +1,13 @@
-import React from 'react';
-import { FileCheck2, Clock, FlaskConical, Zap } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  Menu,
+  ChevronDown,
+  Check,
+  FileCheck2,
+  Clock,
+  FlaskConical,
+  Zap,
+} from 'lucide-react';
 
 export type AppTab = 'review' | 'trace' | 'fixtures' | 'diagnostics';
 
@@ -11,6 +19,33 @@ export interface HeaderProps {
   onTabChange?: (tab: AppTab) => void;
 }
 
+const TAB_CONFIG: { id: AppTab; label: string; icon: React.ReactNode; desc: string }[] = [
+  {
+    id: 'review',
+    label: 'Permit Review',
+    icon: <FileCheck2 className="h-4 w-4 text-[#0071e3]" />,
+    desc: 'Plan intake & consensus evaluation',
+  },
+  {
+    id: 'trace',
+    label: 'Review Timeline',
+    icon: <Clock className="h-4 w-4 text-[#0071e3]" />,
+    desc: 'Distributed trace execution waterfall',
+  },
+  {
+    id: 'fixtures',
+    label: 'Fixtures',
+    icon: <FlaskConical className="h-4 w-4 text-purple-600" />,
+    desc: 'Baseline demo scenarios',
+  },
+  {
+    id: 'diagnostics',
+    label: 'Chaos Diagnostics',
+    icon: <Zap className="h-4 w-4 text-amber-500" />,
+    desc: 'Container fault injection controls',
+  },
+];
+
 export const Header: React.FC<HeaderProps> = ({
   mode,
   onModeChange,
@@ -18,76 +53,116 @@ export const Header: React.FC<HeaderProps> = ({
   activeTab = 'review',
   onTabChange,
 }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // Close dropdown on click outside or escape
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  const currentTab = TAB_CONFIG.find((t) => t.id === activeTab) || TAB_CONFIG[0];
+
   return (
-    <header className="apple-glass border-b border-black/[0.06] sticky top-0 z-30 px-4 sm:px-6 py-4 transition-all">
-      <div className="max-w-4xl mx-auto flex flex-col items-center text-center">
-        {/* Title and User-Centered Catchphrase */}
-        <h1 className="text-xl sm:text-2xl font-bold text-[#1d1d1f] tracking-tight">
-          Permit Orchestrator
-        </h1>
-        <p className="text-xs sm:text-sm text-[#86868b] mt-1 font-normal max-w-lg">
-          Automated city permit reviews &amp; instant multi-department compliance
-        </p>
+    <header className="apple-glass border-b border-black/[0.06] sticky top-0 z-30 px-4 sm:px-6 py-3.5 transition-all">
+      <div className="max-w-7xl mx-auto flex items-center justify-between">
+        {/* Top Left: Dropdown Menu & Title in line */}
+        <div className="flex items-center space-x-3 sm:space-x-4">
+          {/* In-theme Dropdown Menu */}
+          {onTabChange && (
+            <div className="relative" ref={dropdownRef}>
+              <button
+                type="button"
+                onClick={() => setIsOpen((prev) => !prev)}
+                aria-expanded={isOpen}
+                aria-haspopup="true"
+                aria-label="Navigation Menu"
+                className="apple-press flex items-center space-x-2 px-3 py-2 rounded-2xl bg-white hover:bg-slate-50 border border-slate-200/90 text-slate-700 shadow-2xs hover:text-[#0071e3] transition-all cursor-pointer"
+              >
+                <Menu className="h-4 w-4 text-[#0071e3]" />
+                <span className="text-xs font-semibold text-[#1d1d1f] hidden sm:inline">
+                  {currentTab.label}
+                </span>
+                <ChevronDown
+                  className={`h-3.5 w-3.5 text-slate-400 transition-transform duration-200 ${
+                    isOpen ? 'rotate-180 text-[#0071e3]' : ''
+                  }`}
+                />
+              </button>
 
-        {/* Apple Segmented Control Tabs */}
-        {onTabChange && (
-          <nav
-            aria-label="Application Sections"
-            className="mt-3.5 bg-[#e5e5ea]/80 p-1 rounded-2xl flex items-center shadow-inner max-w-full overflow-x-auto"
-          >
-            <button
-              type="button"
-              onClick={() => onTabChange('review')}
-              className={`apple-press flex items-center space-x-1.5 px-4 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap ${
-                activeTab === 'review'
-                  ? 'bg-white text-[#1d1d1f] shadow-xs'
-                  : 'text-[#6e6e73] hover:text-[#1d1d1f]'
-              }`}
-            >
-              <FileCheck2 className="h-3.5 w-3.5 text-[#0071e3]" />
-              <span>Permit Review</span>
-            </button>
+              {/* Apple Frosted Glass Dropdown Popover */}
+              {isOpen && (
+                <div
+                  className="absolute left-0 mt-2 w-64 rounded-2xl bg-white/95 backdrop-blur-xl border border-black/[0.08] shadow-xl p-1.5 z-50 space-y-1 animate-in fade-in zoom-in-95 duration-150"
+                  role="menu"
+                >
+                  <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Sections
+                  </div>
+                  {TAB_CONFIG.map((tab) => {
+                    const isSelected = activeTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          onTabChange(tab.id);
+                          setIsOpen(false);
+                        }}
+                        className={`apple-press w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all text-left ${
+                          isSelected
+                            ? 'bg-blue-50 text-[#0071e3]'
+                            : 'text-slate-700 hover:bg-slate-100 hover:text-[#1d1d1f]'
+                        }`}
+                      >
+                        <div className="flex items-center space-x-2.5 truncate">
+                          {tab.icon}
+                          <div className="truncate">
+                            <span className="block truncate">{tab.label}</span>
+                            <span className="text-[10px] text-[#86868b] font-normal block truncate">
+                              {tab.desc}
+                            </span>
+                          </div>
+                        </div>
+                        {isSelected && <Check className="h-4 w-4 text-[#0071e3] shrink-0 ml-2" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
-            <button
-              type="button"
-              onClick={() => onTabChange('trace')}
-              className={`apple-press flex items-center space-x-1.5 px-4 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap ${
-                activeTab === 'trace'
-                  ? 'bg-white text-[#1d1d1f] shadow-xs'
-                  : 'text-[#6e6e73] hover:text-[#1d1d1f]'
-              }`}
-            >
-              <Clock className="h-3.5 w-3.5 text-[#0071e3]" />
-              <span>Review Timeline</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => onTabChange('fixtures')}
-              className={`apple-press flex items-center space-x-1.5 px-4 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap ${
-                activeTab === 'fixtures'
-                  ? 'bg-white text-[#1d1d1f] shadow-xs'
-                  : 'text-[#6e6e73] hover:text-[#1d1d1f]'
-              }`}
-            >
-              <FlaskConical className="h-3.5 w-3.5 text-purple-600" />
-              <span>Fixtures</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => onTabChange('diagnostics')}
-              className={`apple-press flex items-center space-x-1.5 px-4 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap ${
-                activeTab === 'diagnostics'
-                  ? 'bg-white text-[#1d1d1f] shadow-xs'
-                  : 'text-[#6e6e73] hover:text-[#1d1d1f]'
-              }`}
-            >
-              <Zap className="h-3.5 w-3.5 text-amber-500" />
-              <span>Chaos Diagnostics</span>
-            </button>
-          </nav>
-        )}
+          {/* Title and Small Catchphrase */}
+          <div>
+            <div className="flex items-center space-x-2">
+              <h1 className="text-base sm:text-lg font-bold text-[#1d1d1f] tracking-tight">
+                Permit Orchestrator
+              </h1>
+            </div>
+            <p className="text-xs text-[#86868b] font-normal hidden md:block">
+              Automated city permit reviews &amp; instant multi-department compliance
+            </p>
+          </div>
+        </div>
 
         {/* Screen-reader & testing bridge for system statuses and mode switches */}
         <div className="sr-only" aria-hidden="false">
