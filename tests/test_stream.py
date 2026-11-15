@@ -43,12 +43,20 @@ from orchestrator.handlers.stream import (
     broadcaster,
     get_broadcaster,
     router as stream_router,
+    stream_permit,
 )
 
 
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+@pytest.fixture(autouse=True)
+def reset_broadcaster():
+    get_broadcaster().clear()
+    yield
+    get_broadcaster().clear()
 
 
 @pytest.fixture
@@ -546,6 +554,8 @@ async def test_stream_backward_compat_with_orchestrator_state(temp_db: Path, sam
     )
     orchestrator_state.record_event(permit_id, ev_root)
 
+    active_broadcaster = get_broadcaster(test_app)
+
     async def push_memory_event_and_close():
         await asyncio.sleep(0.05)
         ev_live = TraceEvent(
@@ -557,10 +567,12 @@ async def test_stream_backward_compat_with_orchestrator_state(temp_db: Path, sam
             ts=datetime.now(timezone.utc),
         )
         orchestrator_state.record_event(permit_id, ev_live)
+        active_broadcaster.publish(permit_id, ev_live)
         await asyncio.sleep(0.05)
         orchestrator_state.permits_db[permit_id].state = SagaState.DECIDED
         orchestrator_state.permits_db[permit_id].final_decision = FinalDecision.APPROVED
         orchestrator_state.close_stream_subscribers(permit_id)
+        active_broadcaster.close(permit_id)
 
     pub_task = asyncio.create_task(push_memory_event_and_close())
 
@@ -607,4 +619,68 @@ async def test_stream_subscriber_cleanup(app: FastAPI, temp_db: Path, sample_per
     # Ensure clean unsubscribe
     final_subscribers = len(active_broadcaster._subscribers.get(permit_id, []))
     assert final_subscribers == initial_subscribers == 0
+
+
+@pytest.mark.anyio
+async def test_stream_does_not_drop_events_when_saga_decides_mid_replay(app: FastAPI, temp_db: Path, sample_permit_payload: dict):
+    """
+    Verifies that if the saga reaches consensus and decides while past events are being replayed,
+    events queued during replay (such as CONSENSUS_STARTED and PERMIT_DECIDED) are not dropped.
+    """
+    permit_id = "test-mid-replay-race-002"
+    trace_id = "tr-race-mid-replay"
+    now = datetime.now(timezone.utc)
+
+    db.save_permit(
+        permit_id=permit_id,
+        payload=sample_permit_payload,
+        state=SagaState.EVALUATING,
+        created_at=now,
+        trace_id=trace_id,
+    )
+    ev_root = TraceEvent(
+        event_id="evt-race-1",
+        trace_id=trace_id,
+        permit_id=permit_id,
+        span=SpanId.ORCHESTRATOR,
+        type=TraceEventType.PERMIT_RECEIVED,
+        ts=now,
+        detail={"state": "RECEIVED"},
+    )
+    db.append_trace_event(ev_root)
+
+    active_broadcaster = get_broadcaster(app)
+
+    response = await stream_permit(permit_id, request=None)
+    body = response.body_iterator
+
+    # Consume the first replayed event, suspending generator mid-replay
+    first_chunk = await body.__anext__()
+    assert "evt-race-1" in first_chunk
+
+    # Simulate saga deciding while generator was suspended in replay
+    db.update_permit_decision(
+        permit_id=permit_id,
+        state=SagaState.DECIDED,
+        final_decision=FinalDecision.APPROVED,
+        decision_code=DecisionCode.ALL_DEPARTMENTS_APPROVED,
+        decision_summary="Approved",
+        decided_at=datetime.now(timezone.utc),
+    )
+    decided_event = TraceEvent(
+        event_id="evt-race-decided",
+        trace_id=trace_id,
+        permit_id=permit_id,
+        span=SpanId.ORCHESTRATOR,
+        type=TraceEventType.PERMIT_DECIDED,
+        ts=datetime.now(timezone.utc),
+        detail={"final_decision": "APPROVED"},
+    )
+    active_broadcaster.publish(permit_id, decided_event)
+    active_broadcaster.close(permit_id)
+
+    rest = "".join([chunk async for chunk in body])
+    assert "evt-race-decided" in rest
+    assert rest.index("evt-race-decided") < rest.index("event: done")
+    assert rest.count("event: done") == 1
 

@@ -31,74 +31,34 @@ from contract.models import (
     TraceEvent,
     TraceEventType,
 )
+from orchestrator.handlers.submit import (
+    EventBroadcaster,
+    broadcaster,
+    get_broadcaster,
+)
 
 
-class EventBroadcaster:
-    """In-memory pub/sub broker for live permit trace events and stream completion."""
-
-    def __init__(self) -> None:
-        self._subscribers: Dict[str, List[asyncio.Queue[Optional[Union[TraceEvent, StreamDonePayload]]]]] = {}
-        self._lock = asyncio.Lock()
-
-    def subscribe(
-        self, permit_id: str
-    ) -> asyncio.Queue[Optional[Union[TraceEvent, StreamDonePayload]]]:
-        queue: asyncio.Queue[Optional[Union[TraceEvent, StreamDonePayload]]] = asyncio.Queue()
-        if permit_id not in self._subscribers:
-            self._subscribers[permit_id] = []
-        self._subscribers[permit_id].append(queue)
-        return queue
-
-    def unsubscribe(
-        self,
-        permit_id: str,
-        queue: asyncio.Queue[Optional[Union[TraceEvent, StreamDonePayload]]],
-    ) -> None:
-        if permit_id in self._subscribers:
-            try:
-                self._subscribers[permit_id].remove(queue)
-                if not self._subscribers[permit_id]:
-                    del self._subscribers[permit_id]
-            except ValueError:
-                pass
-
-    def publish(
-        self, permit_id: str, event: Optional[Union[TraceEvent, StreamDonePayload]]
-    ) -> None:
-        if permit_id in self._subscribers:
-            for q in list(self._subscribers[permit_id]):
-                try:
-                    q.put_nowait(event)
-                except Exception:
-                    pass
-
-    def close(self, permit_id: str) -> None:
-        """Signal end of stream by publishing None."""
-        self.publish(permit_id, None)
-
-
-# Default global broadcaster instance
-broadcaster = EventBroadcaster()
-
-
-def get_broadcaster(app: Optional[Any] = None) -> EventBroadcaster:
-    """Resolve the active broadcaster from submit module, app state, or fallback to global."""
-    try:
-        from orchestrator.handlers.submit import broadcaster as submit_broadcaster
-        if submit_broadcaster is not None:
-            return submit_broadcaster
-    except (ImportError, AttributeError):
-        pass
-
-    if app is not None and hasattr(app, "state") and hasattr(app.state, "broadcaster"):
-        return app.state.broadcaster
-
-    return broadcaster
-
-
-def _lookup_permit(permit_id: str, request: Request) -> Optional[PermitStatusResponse]:
+def _lookup_permit(permit_id: str, request: Optional[Request] = None) -> Optional[PermitStatusResponse]:
     """Retrieve permit status from SQLite db or in-memory fallback."""
-    db_path = getattr(request.app.state, "db_path", None) if hasattr(request, "app") else None
+    orchestrator_state = None
+    if request and hasattr(request, "app"):
+        orchestrator_state = getattr(request.app.state, "orchestrator", None)
+    if orchestrator_state is None:
+        try:
+            from orchestrator.app import get_active_app
+            active_app = get_active_app()
+            if active_app and hasattr(active_app.state, "orchestrator"):
+                orchestrator_state = active_app.state.orchestrator
+        except Exception:
+            pass
+
+    # If in-flight in orchestrator_state, prefer active in-flight status
+    if orchestrator_state and hasattr(orchestrator_state, "permits_db"):
+        mem_record = orchestrator_state.permits_db.get(permit_id)
+        if mem_record is not None and mem_record.state != SagaState.DECIDED:
+            return mem_record
+
+    db_path = getattr(request.app.state, "db_path", None) if request and hasattr(request, "app") else None
     # 1. Query SQLite db if available
     try:
         from orchestrator.db import get_permit
@@ -109,7 +69,6 @@ def _lookup_permit(permit_id: str, request: Request) -> Optional[PermitStatusRes
         pass
 
     # 2. Check app.state.orchestrator.permits_db
-    orchestrator_state = getattr(request.app.state, "orchestrator", None)
     if orchestrator_state and hasattr(orchestrator_state, "permits_db"):
         record = orchestrator_state.permits_db.get(permit_id)
         if record is not None:
@@ -118,12 +77,12 @@ def _lookup_permit(permit_id: str, request: Request) -> Optional[PermitStatusRes
     return None
 
 
-def _lookup_trace_events(permit_id: str, request: Request) -> List[TraceEvent]:
+def _lookup_trace_events(permit_id: str, request: Optional[Request] = None) -> List[TraceEvent]:
     """Retrieve all past trace events from SQLite db and in-memory store."""
     events: List[TraceEvent] = []
     seen_ids: Set[str] = set()
 
-    db_path = getattr(request.app.state, "db_path", None) if hasattr(request, "app") else None
+    db_path = getattr(request.app.state, "db_path", None) if request and hasattr(request, "app") else None
     # 1. Query SQLite db
     try:
         from orchestrator.db import get_trace_events
@@ -137,7 +96,18 @@ def _lookup_trace_events(permit_id: str, request: Request) -> List[TraceEvent]:
         pass
 
     # 2. Check app.state.orchestrator.trace_events
-    orchestrator_state = getattr(request.app.state, "orchestrator", None)
+    orchestrator_state = None
+    if request and hasattr(request, "app"):
+        orchestrator_state = getattr(request.app.state, "orchestrator", None)
+    if orchestrator_state is None:
+        try:
+            from orchestrator.app import get_active_app
+            active_app = get_active_app()
+            if active_app and hasattr(active_app.state, "orchestrator"):
+                orchestrator_state = active_app.state.orchestrator
+        except Exception:
+            pass
+
     if orchestrator_state and hasattr(orchestrator_state, "trace_events"):
         mem_events = orchestrator_state.trace_events.get(permit_id, [])
         for ev in mem_events:
@@ -155,7 +125,7 @@ router = APIRouter(tags=["stream"])
     "/permits/{permit_id}/stream",
     summary="Stream permit progress and decision events (SSE)",
 )
-async def stream_permit(permit_id: str, request: Request):
+async def stream_permit(permit_id: str, request: Request = None):
     """
     Server-Sent Events (SSE) endpoint with replay guarantee.
     Streams recorded past TraceEvents from SQLite first, then streams live events
@@ -168,54 +138,40 @@ async def stream_permit(permit_id: str, request: Request):
             detail=f"Permit '{permit_id}' not found",
         )
 
-    active_broadcaster = get_broadcaster(request.app)
+    active_broadcaster = get_broadcaster(request.app if request and hasattr(request, "app") else None)
     queue = active_broadcaster.subscribe(permit_id)
-
-    # Also register with app.state.orchestrator if present for backward compatibility
-    orchestrator_state = getattr(request.app.state, "orchestrator", None)
-    if orchestrator_state is not None and hasattr(orchestrator_state, "event_subscribers"):
-        if permit_id not in orchestrator_state.event_subscribers:
-            orchestrator_state.event_subscribers[permit_id] = []
-        orchestrator_state.event_subscribers[permit_id].append(queue)
 
     async def event_generator():
         seen_event_ids: Set[str] = set()
         try:
-            # 1. Replay past trace events from SQLite DB / storage
+            # 1. Snapshot past events and state together before yielding
             past_events = _lookup_trace_events(permit_id, request)
+            status_at_snapshot = _lookup_permit(permit_id, request)
+            decided_at_snapshot = (
+                status_at_snapshot is not None
+                and status_at_snapshot.state == SagaState.DECIDED
+            )
+
             for ev in past_events:
                 if ev.event_id not in seen_event_ids:
                     seen_event_ids.add(ev.event_id)
                     yield f"event: trace_event\ndata: {ev.model_dump_json()}\n\n"
 
-            # 2. If permit already decided, immediately emit done event and return
-            current_status = _lookup_permit(permit_id, request)
-            if current_status and current_status.state == SagaState.DECIDED:
+            # 2. If already decided at snapshot time, emit done event and finish
+            if decided_at_snapshot:
                 done_payload = StreamDonePayload(
                     permit_id=permit_id,
-                    final_decision=current_status.final_decision,
+                    final_decision=status_at_snapshot.final_decision,
                 )
                 yield f"event: done\ndata: {done_payload.model_dump_json()}\n\n"
                 return
 
             # 3. Stream live events until saga ends
             while True:
-                if await request.is_disconnected():
+                if request is not None and await request.is_disconnected():
                     break
 
-                try:
-                    item = await asyncio.wait_for(queue.get(), timeout=0.5)
-                except asyncio.TimeoutError:
-                    # Check if saga finished while awaiting queue
-                    current_status = _lookup_permit(permit_id, request)
-                    if current_status and current_status.state == SagaState.DECIDED:
-                        done_payload = StreamDonePayload(
-                            permit_id=permit_id,
-                            final_decision=current_status.final_decision,
-                        )
-                        yield f"event: done\ndata: {done_payload.model_dump_json()}\n\n"
-                        break
-                    continue
+                item = await queue.get()
 
                 if item is None:
                     # Saga completed sentinel
@@ -265,12 +221,6 @@ async def stream_permit(permit_id: str, request: Request):
                         break
         finally:
             active_broadcaster.unsubscribe(permit_id, queue)
-            if orchestrator_state is not None and hasattr(orchestrator_state, "event_subscribers"):
-                if permit_id in orchestrator_state.event_subscribers:
-                    try:
-                        orchestrator_state.event_subscribers[permit_id].remove(queue)
-                    except ValueError:
-                        pass
 
     return StreamingResponse(
         event_generator(),
@@ -290,7 +240,7 @@ async def stream_permit(permit_id: str, request: Request):
 )
 async def get_permit_status(
     permit_id: str,
-    request: Request,
+    request: Request = None,
     wait: bool = Query(
         False,
         description="If True, awaits saga completion if permit is currently evaluating",
@@ -306,9 +256,10 @@ async def get_permit_status(
 
     if wait and status_item.state != SagaState.DECIDED:
         event = None
-        orchestrator_state = getattr(request.app.state, "orchestrator", None)
-        if orchestrator_state and hasattr(orchestrator_state, "permit_events"):
-            event = orchestrator_state.permit_events.get(permit_id)
+        if request and hasattr(request, "app"):
+            orchestrator_state = getattr(request.app.state, "orchestrator", None)
+            if orchestrator_state and hasattr(orchestrator_state, "permit_events"):
+                event = orchestrator_state.permit_events.get(permit_id)
         if event is None:
             try:
                 from orchestrator.handlers.submit import get_permit_event
