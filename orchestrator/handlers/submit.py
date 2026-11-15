@@ -419,6 +419,10 @@ async def submit_permit(
         False,
         description="Whether to await saga fan-out and consensus before returning",
     ),
+    idempotent: bool = Query(
+        False,
+        description="Enforce strict idempotency on resubmission of already decided permits",
+    ),
     idempotency_key: Optional[str] = Header(
         None,
         alias="Idempotency-Key",
@@ -428,7 +432,7 @@ async def submit_permit(
     """
     POST /submit endpoint:
     - Validates Permit JSON (from contract.models.Permit)
-    - Supports idempotency: identical permit_id or Idempotency-Key returns existing permit acknowledgment
+    - Supports idempotency: identical permit_id with Idempotency-Key header, idempotent=true, or in-flight deduplication
     - Persists initial permit record to SQLite with SagaState.RECEIVED
     - Emits root TraceEvent (TraceEventType.PERMIT_RECEIVED) to SQLite and event broadcaster
     - Spawns asynchronous background saga (or awaits fan-out and consensus if wait=True)
@@ -463,21 +467,34 @@ async def submit_permit(
     if request is not None and hasattr(request.app.state, "orchestrator"):
         state_sink = request.app.state.orchestrator
 
+    is_in_flight = permit_id in permit_events or permit_id in permit_tasks
+    if not is_in_flight and state_sink is not None and hasattr(state_sink, "permits_db"):
+        sink_rec = state_sink.permits_db.get(permit_id)
+        if sink_rec is not None and sink_rec.state != SagaState.DECIDED:
+            is_in_flight = True
+
+    should_check_idempotency = bool(effective_idemp_key or idempotent or is_in_flight)
+
     async with _submission_lock:
         is_known = False
         existing_trace_id: Optional[str] = None
         existing_state: SagaState = SagaState.RECEIVED
 
-        if has_client_id:
-            # 1. Check state_sink in-memory permits_db if state_sink is present
-            if state_sink is not None and hasattr(state_sink, "permits_db"):
+        if has_client_id and should_check_idempotency:
+            # 1. Check in-flight tasks / events first
+            if permit_id in permit_events or permit_id in permit_tasks:
+                is_known = True
+                existing_trace_id = permit_trace_ids.get(permit_id)
+
+            # 2. Check state_sink in-memory permits_db if state_sink is present
+            if not is_known and state_sink is not None and hasattr(state_sink, "permits_db"):
                 if permit_id in state_sink.permits_db:
                     is_known = True
                     mem_rec = state_sink.permits_db[permit_id]
                     existing_trace_id = getattr(mem_rec, "trace_id", None)
                     existing_state = getattr(mem_rec, "state", SagaState.RECEIVED)
 
-            # 2. Check SQLite DB if db_path is configured or state_sink is not used
+            # 3. Check SQLite DB if db_path is configured or state_sink is not used
             if not is_known and (db_path is not None or state_sink is None):
                 if db_module is not None and hasattr(db_module, "get_permit"):
                     try:
@@ -488,11 +505,6 @@ async def submit_permit(
                             existing_state = db_rec.state
                     except Exception:
                         pass
-
-            # 3. Check in-flight tasks / events
-            if not is_known and (permit_id in permit_events or permit_id in permit_tasks):
-                is_known = True
-                existing_trace_id = permit_trace_ids.get(permit_id)
 
             # 4. Check app-scoped or module submitted permits fallback
             if not is_known and state_sink is None and db_path is None:
