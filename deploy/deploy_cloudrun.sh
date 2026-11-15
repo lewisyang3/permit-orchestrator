@@ -48,7 +48,10 @@ fi
 
 # Authenticated GCP deployment branch
 echo "Submitting container image build via Google Cloud Build..."
-gcloud builds submit --tag "${IMAGE_NAME}" -f deploy/cloudrun.Dockerfile "${REPO_ROOT}"
+gcloud builds submit \
+    --config="${SCRIPT_DIR}/cloudbuild.yaml" \
+    --substitutions="_IMAGE_NAME=${IMAGE_NAME}" \
+    "${REPO_ROOT}"
 
 echo "Deploying container image to Google Cloud Run..."
 AUTH_FLAG="--no-allow-unauthenticated"

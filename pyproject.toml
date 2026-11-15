@@ -22,7 +22,7 @@ dev = [
 package = false
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "orchestrator/handlers"]
 pythonpath = ["."]
 filterwarnings = [
     "error",

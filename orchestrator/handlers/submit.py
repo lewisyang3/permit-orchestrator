@@ -463,19 +463,19 @@ async def submit_permit(
     except ImportError:
         db_module = None
 
-    state_sink = None
-    if request is not None and hasattr(request.app.state, "orchestrator"):
-        state_sink = request.app.state.orchestrator
-
-    is_in_flight = permit_id in permit_events or permit_id in permit_tasks
-    if not is_in_flight and state_sink is not None and hasattr(state_sink, "permits_db"):
-        sink_rec = state_sink.permits_db.get(permit_id)
-        if sink_rec is not None and sink_rec.state != SagaState.DECIDED:
-            is_in_flight = True
-
-    should_check_idempotency = bool(effective_idemp_key or idempotent or is_in_flight)
-
     async with _submission_lock:
+        state_sink = None
+        if request is not None and hasattr(request.app.state, "orchestrator"):
+            state_sink = request.app.state.orchestrator
+
+        is_in_flight = permit_id in permit_events or permit_id in permit_tasks
+        if not is_in_flight and state_sink is not None and hasattr(state_sink, "permits_db"):
+            sink_rec = state_sink.permits_db.get(permit_id)
+            if sink_rec is not None and sink_rec.state != SagaState.DECIDED:
+                is_in_flight = True
+
+        should_check_idempotency = bool(effective_idemp_key or idempotent or is_in_flight)
+
         is_known = False
         existing_trace_id: Optional[str] = None
         existing_state: SagaState = SagaState.RECEIVED
