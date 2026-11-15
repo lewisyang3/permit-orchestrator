@@ -8,6 +8,10 @@ export default defineConfig({
     port: 3000,
     host: true,
     proxy: {
+      '/health': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
       '/submit': {
         target: 'http://localhost:8000',
         changeOrigin: true,

@@ -52,7 +52,7 @@ describe('Trace UI Frontend with Golden Fixtures (T7)', () => {
     fireEvent.click(timeoutCard);
 
     // Click fire department span
-    const fireSpanLabel = screen.getAllByText('Fire Department')[0];
+    const fireSpanLabel = screen.getByText('dept:fire');
     fireEvent.click(fireSpanLabel);
 
     // Side drawer should open
