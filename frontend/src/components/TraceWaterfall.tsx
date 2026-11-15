@@ -32,21 +32,21 @@ export const TraceWaterfall: React.FC<TraceWaterfallProps> = ({
   });
 
   const getSpanIcon = (spanId: string) => {
-    if (spanId === 'orchestrator') return <Workflow className="h-4 w-4 text-emerald-400" />;
-    if (spanId === 'consensus') return <Scale className="h-4 w-4 text-purple-400" />;
-    return <Server className="h-4 w-4 text-sky-400" />;
+    if (spanId === 'orchestrator') return <Workflow className="h-4 w-4 text-[#0071e3]" />;
+    if (spanId === 'consensus') return <Scale className="h-4 w-4 text-purple-600" />;
+    return <Server className="h-4 w-4 text-sky-600" />;
   };
 
   return (
-    <div className="bg-slate-900/90 rounded-xl border border-slate-800 shadow-xl overflow-hidden">
+    <div className="bg-white rounded-3xl border border-black/[0.06] shadow-xs overflow-hidden transition-all">
       {/* Waterfall Table Header */}
-      <div className="grid grid-cols-12 border-b border-slate-800 bg-slate-950/70 text-xs font-semibold text-slate-400 px-4 py-3">
+      <div className="grid grid-cols-12 border-b border-slate-100 bg-slate-50/70 text-xs font-semibold text-slate-500 px-4 sm:px-6 py-3">
         <div className="col-span-12 md:col-span-4 flex items-center justify-between pr-4">
-          <span>Span / Component</span>
+          <span className="text-[#1d1d1f] font-bold">Span / Component</span>
           <span>Status &amp; Attempts</span>
         </div>
         <div className="hidden md:block md:col-span-8 pl-4 relative">
-          <div className="flex justify-between text-[11px] font-mono text-slate-400">
+          <div className="flex justify-between text-[11px] font-mono text-slate-500">
             {rulerTicks.map((t, idx) => (
               <span key={idx} style={{ left: `${t.percent}%` }}>
                 {formatDurationMs(t.ms)}
@@ -54,16 +54,16 @@ export const TraceWaterfall: React.FC<TraceWaterfallProps> = ({
             ))}
           </div>
           {/* Subtle grid ticks line */}
-          <div className="flex justify-between h-1.5 mt-1 border-b border-slate-800">
+          <div className="flex justify-between h-1.5 mt-1 border-b border-slate-200">
             {rulerTicks.map((_, idx) => (
-              <div key={idx} className="w-px h-full bg-slate-700" />
+              <div key={idx} className="w-px h-full bg-slate-300" />
             ))}
           </div>
         </div>
       </div>
 
       {/* Waterfall Rows */}
-      <div className="divide-y divide-slate-800/60">
+      <div className="divide-y divide-slate-100">
         {trace.spans.map((span) => {
           const isSelected = selectedSpan?.id === span.id;
           const statusColors = getStatusColor(span.status);
@@ -72,8 +72,8 @@ export const TraceWaterfall: React.FC<TraceWaterfallProps> = ({
           return (
             <div
               key={span.id}
-              className={`grid grid-cols-12 px-4 py-2.5 items-center transition-colors group ${
-                isSelected ? 'bg-slate-800/60' : 'hover:bg-slate-850/50'
+              className={`grid grid-cols-12 px-4 sm:px-6 py-3 items-center transition-colors group ${
+                isSelected ? 'bg-blue-50/60' : 'hover:bg-slate-50/70'
               }`}
             >
               {/* Left Column: Span metadata */}
@@ -81,14 +81,14 @@ export const TraceWaterfall: React.FC<TraceWaterfallProps> = ({
                 onClick={() => onSelectSpan(span)}
                 className="col-span-12 md:col-span-4 flex items-center justify-between pr-4 cursor-pointer"
               >
-                <div className={`flex items-center space-x-2 truncate ${isChild ? 'pl-4' : ''}`}>
-                  {isChild && <ChevronRight className="h-3 w-3 text-slate-600 shrink-0" />}
+                <div className={`flex items-center space-x-2.5 truncate ${isChild ? 'pl-4' : ''}`}>
+                  {isChild && <ChevronRight className="h-3.5 w-3.5 text-slate-400 shrink-0" />}
                   <span className="shrink-0">{getSpanIcon(span.id)}</span>
                   <div className="truncate">
-                    <span className="text-xs font-semibold text-slate-200 block truncate group-hover:text-white">
+                    <span className="text-xs font-bold text-[#1d1d1f] block truncate group-hover:text-[#0071e3] transition-colors">
                       {span.label}
                     </span>
-                    <span className="text-[10px] text-slate-500 font-mono block truncate">
+                    <span className="text-[10px] text-slate-400 font-mono block truncate">
                       {span.id}
                     </span>
                   </div>
@@ -96,14 +96,14 @@ export const TraceWaterfall: React.FC<TraceWaterfallProps> = ({
 
                 <div className="flex items-center space-x-2 shrink-0">
                   {span.attemptsCount > 1 && (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/15 text-rose-300 border border-rose-500/30 flex items-center space-x-1">
-                      <RotateCw className="h-2.5 w-2.5 animate-spin" />
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-50 text-rose-800 border border-rose-200 flex items-center space-x-1">
+                      <RotateCw className="h-3 w-3 animate-spin text-rose-600" />
                       <span>{span.attemptsCount}x</span>
                     </span>
                   )}
 
                   <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider ${statusColors.bg} ${statusColors.text} border ${statusColors.border}`}
+                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider ${statusColors.bg} ${statusColors.text} border ${statusColors.border}`}
                   >
                     {span.status}
                   </span>
@@ -125,32 +125,32 @@ export const TraceWaterfall: React.FC<TraceWaterfallProps> = ({
       </div>
 
       {/* Footer Info */}
-      <div className="px-4 py-3 bg-slate-950/60 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+      <div className="px-4 sm:px-6 py-3.5 bg-slate-50/80 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
         <div className="flex items-center space-x-2">
           <span className="text-slate-500">Total Spans:</span>
-          <span className="font-mono text-slate-200 font-semibold">{trace.spans.length}</span>
-          <span className="text-slate-600">•</span>
+          <span className="font-mono text-[#1d1d1f] font-bold">{trace.spans.length}</span>
+          <span className="text-slate-300">•</span>
           <span className="text-slate-500">Total Duration:</span>
-          <span className="font-mono text-emerald-400 font-semibold">
+          <span className="font-mono text-emerald-700 font-bold">
             {formatDurationMs(trace.totalDurationMs)}
           </span>
         </div>
 
         <div className="flex items-center space-x-3 text-[11px]">
-          <span className="flex items-center space-x-1">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block" />
-            <span>Approved</span>
+          <span className="flex items-center space-x-1.5">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block shadow-2xs" />
+            <span className="font-medium text-slate-700">Approved</span>
           </span>
-          <span className="flex items-center space-x-1">
-            <span className="h-2 w-2 rounded-full bg-amber-500 inline-block" />
-            <span>Rejected</span>
+          <span className="flex items-center space-x-1.5">
+            <span className="h-2 w-2 rounded-full bg-amber-500 inline-block shadow-2xs" />
+            <span className="font-medium text-slate-700">Rejected</span>
           </span>
-          <span className="flex items-center space-x-1">
-            <span className="h-2 w-2 rounded-full bg-rose-500 inline-block" />
-            <span>Timeout / Retry</span>
+          <span className="flex items-center space-x-1.5">
+            <span className="h-2 w-2 rounded-full bg-rose-500 inline-block shadow-2xs" />
+            <span className="font-medium text-slate-700">Timeout / Retry</span>
           </span>
-          <span className="text-slate-600">•</span>
-          <span className="text-slate-400">Click any span for attempt diagnostics</span>
+          <span className="text-slate-300">•</span>
+          <span className="text-[#86868b]">Click any span for attempt diagnostics</span>
         </div>
       </div>
     </div>

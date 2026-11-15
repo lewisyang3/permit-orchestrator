@@ -13,6 +13,8 @@ import {
   CheckCircle2,
   Clock,
   ShieldAlert,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 interface FaultControlPanelProps {
@@ -21,10 +23,10 @@ interface FaultControlPanelProps {
 }
 
 const DEPARTMENTS: { name: DepartmentName; label: string; icon: React.ReactNode }[] = [
-  { name: 'fire', label: 'Fire Department', icon: <Flame className="h-4 w-4 text-rose-400" /> },
-  { name: 'zoning', label: 'Zoning Department', icon: <Home className="h-4 w-4 text-indigo-400" /> },
-  { name: 'water', label: 'Water Department', icon: <Droplet className="h-4 w-4 text-sky-400" /> },
-  { name: 'structural', label: 'Structural Department', icon: <Shield className="h-4 w-4 text-emerald-400" /> },
+  { name: 'fire', label: 'Fire Department', icon: <Flame className="h-4 w-4 text-rose-600" /> },
+  { name: 'zoning', label: 'Zoning Department', icon: <Home className="h-4 w-4 text-indigo-600" /> },
+  { name: 'water', label: 'Water Department', icon: <Droplet className="h-4 w-4 text-sky-600" /> },
+  { name: 'structural', label: 'Structural Department', icon: <Shield className="h-4 w-4 text-emerald-600" /> },
 ];
 
 export const FaultControlPanel: React.FC<FaultControlPanelProps> = ({
@@ -36,6 +38,7 @@ export const FaultControlPanel: React.FC<FaultControlPanelProps> = ({
   const [updatingDept, setUpdatingDept] = useState<DepartmentName | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [isExpanded, setIsExpanded] = useState(true);
 
   const loadFaultStatus = useCallback(async () => {
     if (!isBackendOnline) return;
@@ -108,30 +111,30 @@ export const FaultControlPanel: React.FC<FaultControlPanelProps> = ({
     switch (mode) {
       case 'offline':
         return (
-          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center space-x-1 animate-pulse">
-            <ShieldAlert className="h-3 w-3 mr-0.5" />
+          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-100 text-rose-800 border border-rose-200 flex items-center space-x-1">
+            <ShieldAlert className="h-3 w-3 mr-0.5 text-rose-600" />
             <span>OFFLINE (503)</span>
           </span>
         );
       case 'slow':
         return (
-          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center space-x-1">
-            <Clock className="h-3 w-3 mr-0.5" />
+          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-100 text-amber-800 border border-amber-200 flex items-center space-x-1">
+            <Clock className="h-3 w-3 mr-0.5 text-amber-600" />
             <span>SLOW ({status?.delay_ms || 3000}ms)</span>
           </span>
         );
       case 'error':
         return (
-          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-red-500/20 text-red-300 border border-red-500/40 flex items-center space-x-1">
-            <AlertTriangle className="h-3 w-3 mr-0.5" />
+          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-red-100 text-red-800 border border-red-200 flex items-center space-x-1">
+            <AlertTriangle className="h-3 w-3 mr-0.5 text-red-600" />
             <span>ERROR (500)</span>
           </span>
         );
       case 'none':
       default:
         return (
-          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center space-x-1">
-            <CheckCircle2 className="h-3 w-3 mr-0.5" />
+          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center space-x-1">
+            <CheckCircle2 className="h-3 w-3 mr-0.5 text-emerald-600" />
             <span>HEALTHY</span>
           </span>
         );
@@ -139,21 +142,21 @@ export const FaultControlPanel: React.FC<FaultControlPanelProps> = ({
   };
 
   return (
-    <div className="bg-slate-900/90 rounded-xl border border-slate-800 shadow-xl overflow-hidden">
+    <div className="bg-white rounded-3xl border border-black/[0.06] shadow-xs overflow-hidden transition-all duration-300">
       {/* Panel Header */}
-      <div className="p-4 border-b border-slate-800 bg-slate-950/70 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center space-x-2.5">
-          <div className="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400">
-            <Zap className="h-4 w-4" />
+      <div className="p-4 sm:p-5 border-b border-slate-200 bg-slate-50/80 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center space-x-3">
+          <div className="p-2.5 rounded-2xl bg-amber-50 border border-amber-200/80 text-amber-600">
+            <Zap className="h-5 w-5" />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-white flex items-center space-x-2">
-              <span>Fault Injection &amp; Chaos Controls</span>
-              <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-slate-800 text-slate-300 border border-slate-700">
+            <div className="flex items-center space-x-2">
+              <h3 className="text-sm font-bold text-[#1d1d1f] tracking-tight">Fault Injection &amp; Chaos Controls</h3>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-white text-slate-600 border border-slate-200 shadow-xs">
                 POST /admin/fault
               </span>
-            </h3>
-            <p className="text-xs text-slate-400">
+            </div>
+            <p className="text-xs text-[#86868b] font-normal">
               Inject failure modes live into department containers to demonstrate timeout, retry, and fail-safe consensus.
             </p>
           </div>
@@ -166,7 +169,7 @@ export const FaultControlPanel: React.FC<FaultControlPanelProps> = ({
             type="button"
             disabled={!isBackendOnline || loading || updatingDept !== null}
             onClick={handleSimulateFireOutage}
-            className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold flex items-center space-x-1.5 transition-colors disabled:opacity-50 shadow-sm"
+            className="apple-press px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold flex items-center space-x-1.5 shadow-sm shadow-rose-500/25 disabled:opacity-50"
           >
             <Zap className="h-3.5 w-3.5" />
             <span>Kill Fire Department (Outage Demo)</span>
@@ -177,7 +180,7 @@ export const FaultControlPanel: React.FC<FaultControlPanelProps> = ({
             type="button"
             disabled={!isBackendOnline || loading || updatingDept !== null}
             onClick={handleRestoreAll}
-            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium flex items-center space-x-1.5 transition-colors disabled:opacity-50"
+            className="apple-press px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-xs font-semibold flex items-center space-x-1.5 disabled:opacity-50"
           >
             <RotateCcw className="h-3.5 w-3.5" />
             <span>Restore All</span>
@@ -188,40 +191,50 @@ export const FaultControlPanel: React.FC<FaultControlPanelProps> = ({
             type="button"
             disabled={!isBackendOnline || loading}
             onClick={loadFaultStatus}
-            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700 transition-colors disabled:opacity-50"
+            className="apple-press p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 border border-slate-200 disabled:opacity-50"
             title="Refresh fault statuses"
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin text-sky-400' : ''}`} />
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin text-blue-600' : ''}`} />
+          </button>
+
+          {/* Disclosure button */}
+          <button
+            type="button"
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="apple-press p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 border border-slate-200"
+            title={isExpanded ? 'Collapse department controls' : 'Expand department controls'}
+          >
+            {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
           </button>
         </div>
       </div>
 
       {/* Notifications */}
       {errorMsg && (
-        <div className="px-4 py-2 bg-rose-950/40 border-b border-rose-500/30 text-rose-300 text-xs flex items-center space-x-2">
-          <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0" />
-          <span>{errorMsg}</span>
+        <div className="px-4 py-3 bg-rose-50 border-b border-rose-200 text-rose-900 text-xs flex items-center space-x-2">
+          <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
+          <span className="font-medium">{errorMsg}</span>
         </div>
       )}
 
       {actionSuccess && (
-        <div className="px-4 py-2 bg-emerald-950/40 border-b border-emerald-500/30 text-emerald-300 text-xs flex items-center space-x-2">
-          <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-          <span>{actionSuccess}</span>
+        <div className="px-4 py-3 bg-emerald-50 border-b border-emerald-200 text-emerald-900 text-xs flex items-center space-x-2">
+          <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+          <span className="font-medium">{actionSuccess}</span>
         </div>
       )}
 
       {!isBackendOnline && (
-        <div className="px-4 py-2.5 bg-amber-950/30 border-b border-amber-500/30 text-amber-300 text-xs flex items-center space-x-2">
-          <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
+        <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 text-amber-900 text-xs flex items-center space-x-2">
+          <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
           <span>
-            Backend orchestrator is offline (<code className="font-mono bg-amber-900/40 px-1 py-0.5 rounded">http://localhost:8000</code>). Start with <code className="font-mono bg-amber-900/40 px-1 py-0.5 rounded">docker compose up</code> or <code className="font-mono bg-amber-900/40 px-1 py-0.5 rounded">uv run uvicorn orchestrator.app:app</code> to interact with live containers.
+            Backend orchestrator is offline (<code className="font-mono bg-white px-1.5 py-0.5 rounded border border-amber-200">http://localhost:8000</code>). Start with <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-amber-200">docker compose up</code> or <code className="font-mono bg-white px-1.5 py-0.5 rounded border border-amber-200">uv run uvicorn orchestrator.app:app</code> to interact with live containers.
           </span>
         </div>
       )}
 
-      {/* 4 Departments Grid */}
-      <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* 4 Departments Grid (visible in DOM) */}
+      <div className={`p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 ${isExpanded ? 'block' : 'hidden'}`}>
         {DEPARTMENTS.map((dept) => {
           const currentStatus = faultStatuses[dept.name];
           const currentMode = currentStatus?.mode || 'none';
@@ -230,10 +243,10 @@ export const FaultControlPanel: React.FC<FaultControlPanelProps> = ({
           return (
             <div
               key={dept.name}
-              className={`p-3.5 rounded-xl border text-xs transition-all flex flex-col justify-between ${
+              className={`p-4 rounded-2xl border text-xs transition-all flex flex-col justify-between ${
                 currentMode !== 'none'
-                  ? 'bg-rose-950/20 border-rose-500/40 shadow-sm shadow-rose-950/30'
-                  : 'bg-slate-950/60 border-slate-800/80 hover:border-slate-700'
+                  ? 'border-rose-300 bg-rose-50/50 shadow-xs'
+                  : 'bg-slate-50/70 border-slate-200 hover:border-slate-300'
               }`}
             >
               <div>
@@ -241,19 +254,19 @@ export const FaultControlPanel: React.FC<FaultControlPanelProps> = ({
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center space-x-2">
                     <span className="shrink-0">{dept.icon}</span>
-                    <span className="font-bold text-slate-100">{dept.label}</span>
+                    <span className="font-bold text-[#1d1d1f]">{dept.label}</span>
                   </div>
                   {getModeBadge(currentStatus)}
                 </div>
 
-                <p className="text-[11px] text-slate-400 mb-3 truncate">
+                <p className="text-[11px] text-slate-500 mb-3 truncate font-normal">
                   {currentStatus?.message || `${dept.label} operating normally`}
                 </p>
               </div>
 
               {/* Mode Control Buttons */}
-              <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
-                <span className="text-[10px] uppercase font-semibold text-slate-500 tracking-wider block">
+              <div className="space-y-1.5 pt-2.5 border-t border-slate-200">
+                <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">
                   Fault Mode:
                 </span>
                 <div className="grid grid-cols-2 gap-1.5 text-[11px]">
@@ -261,10 +274,10 @@ export const FaultControlPanel: React.FC<FaultControlPanelProps> = ({
                     type="button"
                     disabled={!isBackendOnline || isUpdating}
                     onClick={() => handleSetFault(dept.name, 'none')}
-                    className={`px-2 py-1 rounded font-medium transition-colors ${
+                    className={`apple-press px-2 py-1.5 rounded-xl font-semibold transition-all ${
                       currentMode === 'none'
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
                     }`}
                   >
                     Healthy
@@ -273,10 +286,10 @@ export const FaultControlPanel: React.FC<FaultControlPanelProps> = ({
                     type="button"
                     disabled={!isBackendOnline || isUpdating}
                     onClick={() => handleSetFault(dept.name, 'offline')}
-                    className={`px-2 py-1 rounded font-medium transition-colors ${
+                    className={`apple-press px-2 py-1.5 rounded-xl font-semibold transition-all ${
                       currentMode === 'offline'
-                        ? 'bg-rose-600 text-white'
-                        : 'bg-slate-800 text-slate-300 hover:bg-rose-950/60 hover:text-rose-300'
+                        ? 'bg-rose-600 text-white shadow-xs'
+                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-rose-50 hover:text-rose-800'
                     }`}
                   >
                     Offline (503)
@@ -285,10 +298,10 @@ export const FaultControlPanel: React.FC<FaultControlPanelProps> = ({
                     type="button"
                     disabled={!isBackendOnline || isUpdating}
                     onClick={() => handleSetFault(dept.name, 'slow', 3000)}
-                    className={`px-2 py-1 rounded font-medium transition-colors ${
+                    className={`apple-press px-2 py-1.5 rounded-xl font-semibold transition-all ${
                       currentMode === 'slow'
-                        ? 'bg-amber-600 text-white'
-                        : 'bg-slate-800 text-slate-300 hover:bg-amber-950/60 hover:text-amber-300'
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-amber-50 hover:text-amber-800'
                     }`}
                   >
                     Slow (3.0s)
@@ -297,10 +310,10 @@ export const FaultControlPanel: React.FC<FaultControlPanelProps> = ({
                     type="button"
                     disabled={!isBackendOnline || isUpdating}
                     onClick={() => handleSetFault(dept.name, 'error')}
-                    className={`px-2 py-1 rounded font-medium transition-colors ${
+                    className={`apple-press px-2 py-1.5 rounded-xl font-semibold transition-all ${
                       currentMode === 'error'
-                        ? 'bg-red-600 text-white'
-                        : 'bg-slate-800 text-slate-300 hover:bg-red-950/60 hover:text-red-300'
+                        ? 'bg-red-600 text-white shadow-xs'
+                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-red-50 hover:text-red-800'
                     }`}
                   >
                     Error (500)
