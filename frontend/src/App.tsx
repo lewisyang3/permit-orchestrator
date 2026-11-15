@@ -125,7 +125,11 @@ export const App: React.FC = () => {
     }
 
     try {
-      const data = await submitPermit(currentPermit);
+      const permitToSubmit: Permit = {
+        ...currentPermit,
+        permit_id: `pm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      };
+      const data = await submitPermit(permitToSubmit);
       setLivePermitId(data.permit_id);
       setLiveTraceId(data.trace_id);
       setIsSubmittingLive(false);
@@ -181,6 +185,16 @@ export const App: React.FC = () => {
     }
   };
 
+  // Mode switcher disconnecting active SSE stream when toggling back to fixture mode
+  const handleModeChange = (newMode: 'fixture' | 'live') => {
+    if (newMode === 'fixture' && eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+      setIsStreamingLive(false);
+    }
+    setMode(newMode);
+  };
+
   // One-click live demo flow: trigger live submission after setting fault mode
   const handleRunFaultDemo = () => {
     setMode('live');
@@ -192,7 +206,7 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col antialiased">
-      <Header mode={mode} onModeChange={setMode} isBackendOnline={isBackendOnline} />
+      <Header mode={mode} onModeChange={handleModeChange} isBackendOnline={isBackendOnline} />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
         {/* Live mode banner / active stream status */}
