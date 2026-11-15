@@ -30,7 +30,7 @@ describe('Live Backend Wiring & SSE Streaming (Task T9)', () => {
 
   it('submits permit in Live mode, receives live SSE stream, and updates trace waterfall', async () => {
     vi.spyOn(api, 'checkBackendHealth').mockResolvedValue(true);
-    vi.spyOn(api, 'submitPermit').mockResolvedValue({
+    const submitSpy = vi.spyOn(api, 'submitPermit').mockResolvedValue({
       permit_id: 'pm-live-test-001',
       trace_id: 'trc-live-test-001',
       state: 'RECEIVED',
@@ -50,6 +50,17 @@ describe('Live Backend Wiring & SSE Streaming (Task T9)', () => {
     fireEvent.click(submitButton);
 
     await waitFor(() => {
+      expect(submitSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          permit_id: expect.stringMatching(/^pm-[a-z0-9]+-[a-z0-9]+$/),
+        })
+      );
+      // Ensure it does not send the static fixture ID
+      expect(submitSpy).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          permit_id: 'pm-fixture-approved-001',
+        })
+      );
       expect(screen.getByText(/Permit: pm-live-test-001/i)).toBeInTheDocument();
     });
 
@@ -123,5 +134,39 @@ describe('Live Backend Wiring & SSE Streaming (Task T9)', () => {
       // Should switch to live mode automatically
       expect(screen.getByText('Live Orchestrator SSE Mode Active')).toBeInTheDocument();
     });
+  });
+
+  it('disconnects active EventSource connection when switching from Live to Fixture mode', async () => {
+    vi.spyOn(api, 'checkBackendHealth').mockResolvedValue(true);
+    vi.spyOn(api, 'submitPermit').mockResolvedValue({
+      permit_id: 'pm-mode-switch-001',
+      trace_id: 'trc-mode-switch-001',
+      state: 'RECEIVED',
+      stream_url: '/permits/pm-mode-switch-001/stream',
+    });
+
+    render(<App />);
+
+    // Switch to Live mode
+    fireEvent.click(screen.getByText('Live Orchestrator (SSE)'));
+    await waitFor(() => expect(screen.getByText('Backend :8000 Online')).toBeInTheDocument());
+
+    // Submit permit to establish SSE connection
+    fireEvent.click(screen.getByText('Submit to Orchestrator'));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Permit: pm-mode-switch-001/i)).toBeInTheDocument();
+    });
+
+    const activeES = (globalThis as any).EventSource.instances.at(-1);
+    expect(activeES).toBeDefined();
+    const closeSpy = vi.spyOn(activeES, 'close');
+
+    // Switch back to Golden Fixtures mode
+    fireEvent.click(screen.getByText('Golden Fixtures'));
+
+    // Verify EventSource is closed and live streaming state is terminated
+    expect(closeSpy).toHaveBeenCalled();
+    expect(screen.queryByText('Live Orchestrator SSE Mode Active')).not.toBeInTheDocument();
   });
 });
