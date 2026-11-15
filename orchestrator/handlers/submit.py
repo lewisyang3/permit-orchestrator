@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
@@ -124,9 +125,20 @@ permit_events: Dict[str, asyncio.Event] = {}
 permit_tasks: Dict[str, asyncio.Task] = {}
 
 
-def get_permit_event(permit_id: str) -> Optional[asyncio.Event]:
+def get_permit_event(permit_id: str, app: Optional[Any] = None) -> Optional[asyncio.Event]:
     """Retrieve completion event for a permit saga."""
-    return permit_events.get(permit_id)
+    if permit_id in permit_events:
+        return permit_events[permit_id]
+    if app is not None and hasattr(app, "state") and hasattr(app.state, "orchestrator"):
+        state_sink = app.state.orchestrator
+        if hasattr(state_sink, "permit_events"):
+            return state_sink.permit_events.get(permit_id)
+    return None
+
+
+def get_permit_task(permit_id: str) -> Optional[asyncio.Task]:
+    """Retrieve active background task for a permit saga."""
+    return permit_tasks.get(permit_id)
 
 
 async def run_permit_saga(
@@ -181,20 +193,33 @@ async def run_permit_saga(
         # 1. Dispatch permit evaluation across 4 departments
         department_results: Dict[str, DepartmentResultSummary]
         if dispatcher_fn is not None:
-            sig = inspect.signature(dispatcher_fn)
-            kwargs = {}
-            if "permit" in sig.parameters:
-                kwargs["permit"] = permit
-            if "trace_id" in sig.parameters:
-                kwargs["trace_id"] = trace_id
-            if "on_event" in sig.parameters:
-                kwargs["on_event"] = handle_trace_event
-            if "endpoints" in sig.parameters and endpoints is not None:
-                kwargs["endpoints"] = endpoints
+            disp_res = None
+            try:
+                sig = inspect.signature(dispatcher_fn)
+                kwargs = {}
+                if "permit" in sig.parameters:
+                    kwargs["permit"] = permit
+                if "trace_id" in sig.parameters:
+                    kwargs["trace_id"] = trace_id
+                if "on_event" in sig.parameters:
+                    kwargs["on_event"] = handle_trace_event
+                if "endpoints" in sig.parameters and endpoints is not None:
+                    kwargs["endpoints"] = endpoints
 
-            if len(kwargs) == len(sig.parameters):
-                disp_res = dispatcher_fn(**kwargs)
-            else:
+                has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+                if has_var_kw:
+                    disp_kwargs = {"permit": permit, "trace_id": trace_id, "on_event": handle_trace_event}
+                    if endpoints is not None:
+                        disp_kwargs["endpoints"] = endpoints
+                    disp_res = dispatcher_fn(**disp_kwargs)
+                elif len(kwargs) == len(sig.parameters) or all(
+                    p.default != inspect.Parameter.empty for name, p in sig.parameters.items() if name not in kwargs
+                ):
+                    disp_res = dispatcher_fn(**kwargs)
+            except (ValueError, TypeError):
+                disp_res = None
+
+            if disp_res is None:
                 try:
                     disp_res = dispatcher_fn(permit, trace_id, on_event=handle_trace_event)
                 except TypeError:
@@ -250,7 +275,10 @@ async def run_permit_saga(
 
         # 3. Run consensus evaluation
         if consensus_fn is not None:
-            final_decision, decision_code, summary, violations = consensus_fn(department_results)
+            consensus_res = consensus_fn(department_results)
+            if inspect.isawaitable(consensus_res):
+                consensus_res = await consensus_res
+            final_decision, decision_code, summary, violations = consensus_res
         else:
             final_decision, decision_code, summary, violations = evaluate_consensus(department_results)
 
@@ -413,7 +441,7 @@ async def submit_permit(
     - Spawns asynchronous background saga
     - Returns HTTP 202 Accepted with SubmitPermitResponse
     """
-    permit_id = permit.permit_id if permit.permit_id else str(uuid4())
+    permit_id = permit.permit_id.strip() if permit.permit_id and permit.permit_id.strip() else str(uuid4())
     if permit.permit_id != permit_id:
         permit = permit.model_copy(update={"permit_id": permit_id})
     trace_id = str(uuid4())
@@ -423,6 +451,8 @@ async def submit_permit(
     db_path = None
     if request is not None and hasattr(request.app.state, "db_path"):
         db_path = request.app.state.db_path
+    if db_path is None:
+        db_path = os.environ.get("DATABASE_PATH", None)
 
     try:
         from orchestrator import db as db_module
@@ -467,17 +497,23 @@ async def submit_permit(
 
     active_broadcaster.publish(permit_id, root_event)
 
-    # Resolve overrides and state sink
+    # Resolve overrides, endpoints, and state sink
     dispatcher_fn = None
     consensus_fn = None
     state_sink = None
+    endpoints = None
+
     if request is not None:
+        if hasattr(request.app.state, "endpoints") and request.app.state.endpoints:
+            endpoints = request.app.state.endpoints
         if hasattr(request.app.state, "dispatcher_override") and request.app.state.dispatcher_override is not None:
             dispatcher_fn = request.app.state.dispatcher_override
         if hasattr(request.app.state, "consensus_override") and request.app.state.consensus_override is not None:
             consensus_fn = request.app.state.consensus_override
         if hasattr(request.app.state, "orchestrator") and request.app.state.orchestrator is not None:
             state_sink = request.app.state.orchestrator
+            if endpoints is None and hasattr(state_sink, "endpoints") and state_sink.endpoints:
+                endpoints = state_sink.endpoints
             if state_sink.custom_dispatcher is not None:
                 dispatcher_fn = state_sink.custom_dispatcher
             if state_sink.custom_consensus is not None:
@@ -517,6 +553,7 @@ async def submit_permit(
         broadcaster_inst=active_broadcaster,
         dispatcher_fn=dispatcher_fn,
         consensus_fn=consensus_fn,
+        endpoints=endpoints,
         event=completion_event,
         db_module=db_module,
         db_path=db_path,
