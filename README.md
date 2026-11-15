@@ -1,8 +1,6 @@
 # Permit Orchestrator
 
-Permit Orchestrator is an autonomous distributed municipal building permit review and consensus engine. The prompt:
-
-> Automate and verify an outdated municipal permit workflow with distributed consensus, deterministic rule evaluation, and real-time observability.
+Permit Orchestrator autonomously reviews and approves city building permits. Built for the UC Berkeley x Google DeepMind Hackathon (Antigravity CLI track).
 
 ---
 
