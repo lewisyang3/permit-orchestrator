@@ -300,3 +300,27 @@ export interface DepartmentEvaluationResponse {
   reasons: EvaluationReason[];
   evaluated_at: string;
 }
+
+export interface IntakeParseRequest {
+  filename: string;
+  content_base64?: string | null;
+  content_text?: string | null;
+  mime_type?: string | null;
+}
+
+export interface IntakeParseResponse {
+  permit: Permit;
+  filename: string;
+  file_path?: string | null;
+  extracted_by: string;
+  warnings: string[];
+}
+
+export interface SamplePlanInfo {
+  id: string;
+  title: string;
+  filename: string;
+  description: string;
+  mime_type: string;
+  sample_text?: string | null;
+}
