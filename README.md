@@ -45,45 +45,6 @@ The orchestrator is built for resilience. In the live interface, a built-in **Fa
 
 ---
 
-## Flow Diagram
-
-```mermaid
-flowchart TD
-    subgraph Intake ["1. Intake & Document Extraction"]
-        A["Architectural Plan / Blueprint (PDF/Text)"] --> B{"Deterministic Parser"}
-        B -- "Unstructured / Complex" --> C["Gemini 2.5 Flash (Multimodal)"]
-        B -- "Structured / Sample" --> D["Normalized Permit JSON Payload"]
-        C --> D
-    end
-
-    subgraph Saga ["2. Distributed Saga & Dispatch"]
-        D --> E["FastAPI Orchestrator (POST /submit)"]
-        E --> F[("SQLite (WAL Mode) Append-Only Trace Log")]
-        E --> G["Parallel Async Dispatcher"]
-    end
-
-    subgraph Evaluators ["3. Municipal Department Microservices"]
-        G --> H["Zoning Evaluator (:8001)<br/>Height, Setbacks, Lot Coverage"]
-        G --> I["Fire Evaluator (:8002)<br/>Sprinklers, Egress, Alarms, Hydrants"]
-        G --> J["Water Evaluator (:8003)<br/>Backflow, Metering, Stormwater"]
-        G --> K["Structural Evaluator (:8004)<br/>Stories, Framing, Seismic, Foundation"]
-    end
-
-    subgraph Consensus ["4. Fail-Safe Consensus Gate"]
-        H & I & J & K --> L{"Consensus Rule Evaluator"}
-        L -- "4/4 Approved" --> M["APPROVED<br/>ALL_DEPARTMENTS_APPROVED"]
-        L -- "Code Violations" --> N["REJECTED<br/>DEPARTMENT_REJECTIONS"]
-        L -- "Timeout / Retries Exhausted" --> O["REJECTED (Fail-Safe)<br/>INCOMPLETE_REVIEWS"]
-    end
-
-    subgraph UI ["5. Real-Time Observability & UI"]
-        F -. "Server-Sent Events (SSE)" .-> P["Trace Waterfall & Consensus Verdict"]
-        M & N & O --> P
-    end
-```
-
----
-
 ## Quick start
 
 You need Python 3.13 with [uv](https://docs.astral.sh/uv/), Docker with Compose v2 (Docker Desktop running), and Node 20 or later with npm.
