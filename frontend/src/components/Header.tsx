@@ -82,87 +82,82 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="apple-glass border-b border-black/[0.06] sticky top-0 z-30 px-4 sm:px-6 py-3.5 transition-all">
-      <div className="max-w-7xl mx-auto flex items-center justify-between">
-        {/* Top Left: Dropdown Menu & Title in line */}
-        <div className="flex items-center space-x-3 sm:space-x-4">
-          {/* In-theme Dropdown Menu */}
-          {onTabChange && (
-            <div className="relative" ref={dropdownRef}>
-              <button
-                type="button"
-                onClick={() => setIsOpen((prev) => !prev)}
-                aria-expanded={isOpen}
-                aria-haspopup="true"
-                aria-label="Navigation Menu"
-                className="apple-press flex items-center space-x-2 px-3 py-2 rounded-2xl bg-white hover:bg-slate-50 border border-slate-200/90 text-slate-700 shadow-2xs hover:text-[#0071e3] transition-all cursor-pointer"
-              >
-                <Menu className="h-4 w-4 text-[#0071e3]" />
-                <span className="text-xs font-semibold text-[#1d1d1f] hidden sm:inline">
-                  {currentTab.label}
-                </span>
-                <ChevronDown
-                  className={`h-3.5 w-3.5 text-slate-400 transition-transform duration-200 ${
-                    isOpen ? 'rotate-180 text-[#0071e3]' : ''
-                  }`}
-                />
-              </button>
-
-              {/* Apple Frosted Glass Dropdown Popover */}
-              {isOpen && (
-                <div
-                  className="absolute left-0 mt-2 w-64 rounded-2xl bg-white/95 backdrop-blur-xl border border-black/[0.08] shadow-xl p-1.5 z-50 space-y-1 animate-in fade-in zoom-in-95 duration-150"
-                  role="menu"
-                >
-                  <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    Sections
-                  </div>
-                  {TAB_CONFIG.map((tab) => {
-                    const isSelected = activeTab === tab.id;
-                    return (
-                      <button
-                        key={tab.id}
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          onTabChange(tab.id);
-                          setIsOpen(false);
-                        }}
-                        className={`apple-press w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all text-left ${
-                          isSelected
-                            ? 'bg-blue-50 text-[#0071e3]'
-                            : 'text-slate-700 hover:bg-slate-100 hover:text-[#1d1d1f]'
-                        }`}
-                      >
-                        <div className="flex items-center space-x-2.5 truncate">
-                          {tab.icon}
-                          <div className="truncate">
-                            <span className="block truncate">{tab.label}</span>
-                            <span className="text-[10px] text-[#86868b] font-normal block truncate">
-                              {tab.desc}
-                            </span>
-                          </div>
-                        </div>
-                        {isSelected && <Check className="h-4 w-4 text-[#0071e3] shrink-0 ml-2" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Title and Small Catchphrase */}
-          <div>
-            <div className="flex items-center space-x-2">
-              <h1 className="text-base sm:text-lg font-bold text-[#1d1d1f] tracking-tight">
-                Permit Orchestrator
-              </h1>
-            </div>
-            <p className="text-xs text-[#86868b] font-normal hidden md:block">
-              Automated city permit reviews &amp; instant multi-department compliance
-            </p>
-          </div>
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+        {/* Left Side: Brand Title & Catchphrase Subtitle */}
+        <div>
+          <h1 className="text-base sm:text-lg font-bold text-[#1d1d1f] tracking-tight">
+            Permit Orchestrator
+          </h1>
+          <p className="text-xs text-[#86868b] font-normal mt-0.5">
+            Automated city permit reviews &amp; instant multi-department compliance
+          </p>
         </div>
+
+        {/* Right Side: In-Theme Section Dropdown Menu */}
+        {onTabChange && (
+          <div className="relative" ref={dropdownRef}>
+            <button
+              type="button"
+              onClick={() => setIsOpen((prev) => !prev)}
+              aria-expanded={isOpen}
+              aria-haspopup="true"
+              aria-label="Navigation Menu"
+              className="apple-press flex items-center space-x-2 px-3.5 py-2 rounded-2xl bg-white hover:bg-slate-50 border border-slate-200/90 text-slate-700 shadow-2xs hover:text-[#0071e3] transition-all cursor-pointer font-medium"
+            >
+              <Menu className="h-4 w-4 text-[#0071e3]" />
+              <span className="text-xs font-semibold text-[#1d1d1f]">
+                {currentTab.label}
+              </span>
+              <ChevronDown
+                className={`h-3.5 w-3.5 text-slate-400 transition-transform duration-200 ${
+                  isOpen ? 'rotate-180 text-[#0071e3]' : ''
+                }`}
+              />
+            </button>
+
+            {/* Apple Frosted Glass Dropdown Popover (Right-Aligned) */}
+            {isOpen && (
+              <div
+                className="absolute right-0 mt-2 w-64 rounded-2xl bg-white/95 backdrop-blur-xl border border-black/[0.08] shadow-xl p-1.5 z-50 space-y-1 animate-in fade-in zoom-in-95 duration-150"
+                role="menu"
+              >
+                <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  Navigation
+                </div>
+                {TAB_CONFIG.map((tab) => {
+                  const isSelected = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        onTabChange(tab.id);
+                        setIsOpen(false);
+                      }}
+                      className={`apple-press w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all text-left cursor-pointer ${
+                        isSelected
+                          ? 'bg-blue-50 text-[#0071e3]'
+                          : 'text-slate-700 hover:bg-slate-100 hover:text-[#1d1d1f]'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-2.5 truncate">
+                        {tab.icon}
+                        <div className="truncate">
+                          <span className="block truncate">{tab.label}</span>
+                          <span className="text-[10px] text-[#86868b] font-normal block truncate">
+                            {tab.desc}
+                          </span>
+                        </div>
+                      </div>
+                      {isSelected && <Check className="h-4 w-4 text-[#0071e3] shrink-0 ml-2" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Screen-reader & testing bridge for system statuses and mode switches */}
         <div className="sr-only" aria-hidden="false">
