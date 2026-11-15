@@ -16,7 +16,7 @@ from uuid import uuid4
 import httpx
 from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 
 from contract.models import (
     AdminFaultResponse,
@@ -38,7 +38,7 @@ from contract.models import (
 )
 from orchestrator.consensus import evaluate_consensus
 from orchestrator.dispatcher import get_default_endpoints, resolve_endpoint_url
-from orchestrator.handlers import admin_router, submit_router, stream_router
+from orchestrator.handlers import admin_router, submit_router, stream_router, ui_router, serve_index
 from orchestrator.handlers.submit import broadcaster
 
 
@@ -333,12 +333,16 @@ def create_app(
     except Exception:
         pass
 
+    # Ensure production UI index route takes precedence over stream_router legacy GET /
+    app.add_api_route("/", serve_index, methods=["GET"], response_class=HTMLResponse, include_in_schema=False)
+
     app.include_router(admin_router)
     app.include_router(submit_router)
     app.include_router(stream_router)
+    app.include_router(ui_router)
 
     # Flatten included routes onto app.routes for direct route inspection compatibility
-    for router_item in (admin_router, submit_router, stream_router):
+    for router_item in (admin_router, submit_router, stream_router, ui_router):
         for route in router_item.routes:
             if route not in app.routes:
                 app.routes.append(route)

@@ -20,6 +20,18 @@ from orchestrator.handlers.submit import (
     run_permit_saga,
     submit_permit,
 )
+from orchestrator.handlers.ui import (
+    FALLBACK_HTML,
+    get_assets_dir,
+    get_dist_dir,
+    get_index_path,
+    health,
+    hello,
+    router as ui_router,
+    serve_asset,
+    serve_index,
+    spa_fallback,
+)
 
 __all__ = [
     "admin_router",
@@ -36,4 +48,14 @@ __all__ = [
     "stream_router",
     "submit_permit",
     "submit_router",
+    "ui_router",
+    "FALLBACK_HTML",
+    "get_assets_dir",
+    "get_dist_dir",
+    "get_index_path",
+    "health",
+    "hello",
+    "serve_asset",
+    "serve_index",
+    "spa_fallback",
 ]
