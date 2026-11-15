@@ -1,0 +1,45 @@
+COMMERCIAL BUILDING PERMIT APPLICATION & PLAN
+Project Title: Commercial Restaurant Outdoor Dining Expansion
+Project Description: Interior dining expansion and new covered outdoor patio seating for a downtown bistro.
+Estimated Cost: $210,000 USD
+
+Property Location:
+Address: 104 Main Street
+City: Metropolis
+State: NY
+Zip: 10001
+
+Applicant Information:
+Name: Gordon Ramsay
+Role: licensed_contractor
+Email: chef.ramsay@bistroglobal.com
+Phone: (555) 867-5309
+
+Zoning Parameters:
+Zone District: C-1 (Neighborhood Commercial)
+Building Height: 24.0 ft
+Lot Area: 12,000 sq ft
+Proposed Footprint: 5,200 sq ft
+Front Setback: 10.0 ft
+Rear Setback: 20.0 ft
+Side Setback: 5.0 ft
+
+Fire Life Safety:
+Occupancy Type: commercial
+Occupant Load: 140 persons
+Fire Alarm System: Yes
+Automatic Sprinklers: No (Missing suppression system)
+Egress Exits Count: 1 exit door
+Distance to Nearest Fire Hydrant: 95 ft
+
+Water & Utilities:
+Water Service Meter Size: 2.0 inches
+Estimated Daily Water Usage: 1,850 gpd
+Backflow Preventer Installed: No
+Stormwater Management Plan: Yes
+
+Structural Engineering:
+Stories: 1 story
+Framing Construction: light_steel
+Seismic Design Category: B
+Foundation Type: slab_on_grade

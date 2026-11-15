@@ -1,0 +1,46 @@
+PERMIT APPLICATION & ARCHITECTURAL SPECIFICATIONS
+Project Title: Single Family Residential Rear Addition
+Project Description: Construction of a 550 sqft single-story rear master suite addition to an existing single-family residence.
+Estimated Cost: $85,000 USD
+
+Property Location:
+Address: 742 Evergreen Terrace
+City: Springfield
+State: OR
+Zip: 97477
+
+Applicant Information:
+Name: Homer Simpson
+Role: homeowner
+Email: homer.simpson@example.com
+Phone: (555) 733-4663
+
+Zoning Parameters:
+Zone District: R-1 (Low Density Residential)
+Building Height: 16.5 ft
+Lot Area: 8,400 sq ft
+Existing Footprint: 1,800 sq ft
+Proposed Total Footprint: 2,350 sq ft
+Front Setback: 25.0 ft
+Rear Setback: 32.0 ft
+Side Setback: 8.5 ft
+
+Fire Life Safety:
+Occupancy Type: residential
+Occupant Load: 5 persons
+Fire Alarm System: Present and hardwired
+Automatic Sprinklers: not required / None
+Egress Exits Count: 2 exterior exit doors
+Distance to Nearest Fire Hydrant: 140 ft
+
+Water & Utilities:
+Water Service Meter Size: 0.75 inches
+Estimated Daily Water Usage: 280 gpd
+Backflow Preventer Installed: Yes (dual check valve)
+Stormwater Management Plan: Yes (pervious pavers & rain garden)
+
+Structural Engineering:
+Stories: 1 story
+Framing Construction: wood_frame (Type V-B)
+Seismic Design Category: C
+Foundation Type: continuous_spread_footing
