@@ -10,7 +10,8 @@ from __future__ import annotations
 import asyncio
 import inspect
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 from uuid import uuid4
 
 import httpx
@@ -38,7 +39,8 @@ from contract.models import (
 )
 from orchestrator.consensus import evaluate_consensus
 from orchestrator.dispatcher import get_default_endpoints, resolve_endpoint_url
-from orchestrator.handlers import admin_router, intake_router, submit_router
+from orchestrator.handlers import admin_router, intake_router, stream_router, submit_router
+from orchestrator.handlers.submit import broadcaster
 
 
 class OrchestratorApp:
@@ -82,6 +84,12 @@ class OrchestratorApp:
             except Exception:
                 pass
 
+        try:
+            from orchestrator.handlers.submit import broadcaster
+            broadcaster.publish(permit_id, event)
+        except Exception:
+            pass
+
     def close_stream_subscribers(self, permit_id: str) -> None:
         """Signal completion to all active SSE subscribers by pushing None."""
         for q in self.event_subscribers.get(permit_id, []):
@@ -89,6 +97,12 @@ class OrchestratorApp:
                 q.put_nowait(None)
             except Exception:
                 pass
+
+        try:
+            from orchestrator.handlers.submit import broadcaster
+            broadcaster.close(permit_id)
+        except Exception:
+            pass
 
     async def call_dispatcher(
         self, permit: Permit, trace_id: str, on_event: Optional[Callable[[TraceEvent], Any]] = None
@@ -265,6 +279,13 @@ class OrchestratorApp:
                 event.set()
 
 
+_active_app: Optional[FastAPI] = None
+
+
+def get_active_app() -> Optional[FastAPI]:
+    return _active_app
+
+
 def create_app(
     dispatcher_override: Optional[Callable[..., Any]] = None,
     consensus_override: Optional[Callable[..., Any]] = None,
@@ -276,6 +297,8 @@ def create_app(
 ) -> FastAPI:
     """Create and configure the FastAPI orchestrator application."""
     app = FastAPI(title="Permit Orchestrator", version="1.0.0")
+    global _active_app
+    _active_app = app
 
     # Issue 7: Add CORS Middleware for frontend (localhost:3000)
     app.add_middleware(
@@ -302,6 +325,8 @@ def create_app(
     app.state.consensus_override = consensus_override
     app.state.db_path = db_path
 
+    app.state.broadcaster = broadcaster
+
     # Initialize SQLite database
     try:
         from orchestrator import db
@@ -312,105 +337,17 @@ def create_app(
     app.include_router(admin_router)
     app.include_router(submit_router)
     app.include_router(intake_router)
+    app.include_router(stream_router)
+
+    # Flatten included routes onto app.routes for direct route inspection compatibility
+    for router_item in (admin_router, submit_router, stream_router, intake_router):
+        for route in router_item.routes:
+            if route not in app.routes:
+                app.routes.append(route)
 
     @app.get("/health")
     async def health():
         return {"status": "healthy"}
-
-    @app.get(
-        "/permits/{permit_id}",
-        response_model=PermitStatusResponse,
-        summary="Get permit status and final decision",
-    )
-    async def get_permit_status(
-        permit_id: str,
-        wait: bool = Query(
-            False,
-            description="If True, awaits saga completion if permit is currently evaluating",
-        ),
-    ):
-        if permit_id not in orchestrator_state.permits_db:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Permit '{permit_id}' not found",
-            )
-
-        if wait and permit_id in orchestrator_state.permit_events:
-            await orchestrator_state.permit_events[permit_id].wait()
-
-        return orchestrator_state.permits_db[permit_id]
-
-    @app.get(
-        "/permits/{permit_id}/stream",
-        summary="Stream permit progress and decision events (SSE)",
-    )
-    async def stream_permit(permit_id: str):
-        if permit_id not in orchestrator_state.permits_db:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Permit '{permit_id}' not found",
-            )
-
-        queue: asyncio.Queue[Optional[TraceEvent]] = asyncio.Queue()
-        if permit_id not in orchestrator_state.event_subscribers:
-            orchestrator_state.event_subscribers[permit_id] = []
-        orchestrator_state.event_subscribers[permit_id].append(queue)
-
-        async def event_generator():
-            seen_event_ids: set[str] = set()
-            try:
-                # 1. Snapshot past events and saga state together, before any yield.
-                # The saga sets DECIDED and records PERMIT_DECIDED synchronously, so a
-                # DECIDED snapshot guarantees past_events is complete. Checking state
-                # after replay instead would drop events queued while replay yielded.
-                past_events = list(orchestrator_state.trace_events.get(permit_id, []))
-                decided_at_snapshot = (
-                    orchestrator_state.permits_db[permit_id].state == SagaState.DECIDED
-                )
-                for ev in past_events:
-                    seen_event_ids.add(ev.event_id)
-                    yield f"event: trace_event\ndata: {ev.model_dump_json()}\n\n"
-
-                # 2. If already decided at snapshot time, emit done event and finish
-                if decided_at_snapshot:
-                    status_item = orchestrator_state.permits_db[permit_id]
-                    done_payload = StreamDonePayload(
-                        permit_id=permit_id, final_decision=status_item.final_decision
-                    )
-                    yield f"event: done\ndata: {done_payload.model_dump_json()}\n\n"
-                    return
-
-                # 3. Stream live events until saga ends
-                while True:
-                    event_item = await queue.get()
-                    if event_item is None:
-                        current_status = orchestrator_state.permits_db[permit_id]
-                        done_payload = StreamDonePayload(
-                            permit_id=permit_id, final_decision=current_status.final_decision
-                        )
-                        yield f"event: done\ndata: {done_payload.model_dump_json()}\n\n"
-                        break
-                    if event_item.event_id in seen_event_ids:
-                        continue
-                    seen_event_ids.add(event_item.event_id)
-                    yield f"event: trace_event\ndata: {event_item.model_dump_json()}\n\n"
-            finally:
-                if permit_id in orchestrator_state.event_subscribers:
-                    try:
-                        orchestrator_state.event_subscribers[permit_id].remove(queue)
-                    except ValueError:
-                        pass
-
-        headers = {
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        }
-        return StreamingResponse(
-            event_generator(),
-            media_type="text/event-stream",
-            headers=headers,
-        )
 
     return app
 

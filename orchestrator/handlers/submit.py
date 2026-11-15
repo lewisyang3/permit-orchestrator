@@ -112,8 +112,10 @@ class EventBroadcaster:
 broadcaster = EventBroadcaster()
 
 
-def get_broadcaster() -> EventBroadcaster:
-    """Return the global event broadcaster instance."""
+def get_broadcaster(app: Optional[Any] = None) -> EventBroadcaster:
+    """Return the active event broadcaster instance."""
+    if app is not None and hasattr(app, "state") and hasattr(app.state, "broadcaster") and app.state.broadcaster is not None:
+        return app.state.broadcaster
     return broadcaster
 
 
