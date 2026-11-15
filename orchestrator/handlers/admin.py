@@ -43,6 +43,10 @@ def resolve_fault_url(base_or_eval_url: str) -> str:
 async def get_http_client(request: Request) -> AsyncIterator[httpx.AsyncClient]:
     """Provide httpx.AsyncClient from app.state if available, or create temporary one."""
     app_client = getattr(request.app.state, "http_client", None)
+    if app_client is None:
+        orch = getattr(request.app.state, "orchestrator", None)
+        if orch is not None:
+            app_client = getattr(orch, "http_client", None)
     if app_client is not None:
         yield app_client
         return
@@ -54,6 +58,10 @@ async def get_http_client(request: Request) -> AsyncIterator[httpx.AsyncClient]:
 def get_endpoints_dep(request: Request) -> Dict[str, str]:
     """Retrieve department endpoint dictionary, with support for request.app.state overrides."""
     custom = getattr(request.app.state, "department_endpoints", None)
+    if custom is None:
+        orch = getattr(request.app.state, "orchestrator", None)
+        if orch is not None:
+            custom = getattr(orch, "endpoints", None)
     if custom is not None:
         return custom
     return get_default_endpoints()
@@ -77,7 +85,7 @@ async def _query_department_fault(
 
     fault_url = resolve_fault_url(dept_url)
     try:
-        resp = await client.get(fault_url)
+        resp = await client.get(fault_url, timeout=3.0)
         if resp.status_code == 200:
             data = resp.json()
             if not isinstance(data, dict):
@@ -140,7 +148,7 @@ async def admin_set_fault(
     payload = req.model_dump(mode="json")
 
     try:
-        resp = await client.post(fault_url, json=payload)
+        resp = await client.post(fault_url, json=payload, timeout=5.0)
         resp.raise_for_status()
         data = resp.json()
         if not isinstance(data, dict):
