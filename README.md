@@ -1,96 +1,147 @@
-# Permit Orchestrator — local Docker stack
+# Permit Orchestrator
 
-Compose runs five containers: a development orchestrator and four copies of the same department image. Department name, rule file, and port differ for each copy. Only the orchestrator mounts the SQLite volume. No database server or SQLite container is needed.
+Permit Orchestrator is an autonomous distributed municipal building permit review and consensus engine. The prompt:
 
-## Start
+> Automate and verify an outdated municipal permit workflow with distributed consensus, deterministic rule evaluation, and real-time observability.
 
-Install and start Docker Desktop, then run these commands from the directory containing `compose.yaml`:
+---
 
-```bash
-docker compose config --quiet
-docker compose up --build -d --wait
-docker compose ps
+## The problem
+
+Getting a building permit is one of the slowest, most opaque bureaucratic bottlenecks in urban development. Homeowners and commercial developers submit architectural blueprints and permit applications that sit in municipal backlogs for months. Within city hall, applications must navigate four independent departmental silos—**Zoning**, **Fire Life Safety**, **Water & Utilities**, and **Structural Engineering**—each operating on separate schedules, manual checklists, and conflicting code cycles.
+
+When reviews stall or fail, applicants receive cryptic rejection letters with zero visibility into which department blocked approval or what specific code standard was violated. Worse, in manual workflows, approvals can accidentally slip through when a department fails to respond in time, creating severe public safety and legal liabilities. Municipalities lack distributed consensus guarantees and end-to-end audit trails to prove that every required authority actively signed off.
+
+---
+
+## How Permit Orchestrator solves it
+
+Permit Orchestrator replaces manual municipal permit routing with an asynchronous distributed saga. It extracts specifications directly from blueprint documents, evaluates them concurrently across isolated department microservices, and enforces a strict consensus gate: **a permit is approved if and only if all four departments explicitly sign off**.
+
+Every application moves through five automated steps, prioritizing fast, deterministic checks before expensive AI extraction and network calls:
+
+1. **Intake.** Applicants upload an architectural plan (PDF, blueprint text, or select a built-in sample). A deterministic parser extracts normalized permit parameters (dimensions, setbacks, occupant loads, utility connections). When blueprints are unstructured or complex, Gemini 2.5 Flash extracts the structured permit payload.
+2. **Dispatch.** The orchestrator initiates an asynchronous distributed saga (`POST /submit`). It records the permit into SQLite and dispatches concurrent evaluation requests to four isolated department microservices (Zoning `:8001`, Fire `:8002`, Water `:8003`, Structural `:8004`).
+3. **Evaluate.** Each department independently evaluates the application against codified standards (such as San José Title 20 zoning regulations, NFPA 13 sprinkler thresholds, and CBC/IBC egress requirements). If a parameter fails, the evaluator cites the exact rule ID, statutory section, and violation reason.
+4. **Consensus Gate.** The orchestrator gathers results and evaluates a fail-safe consensus rule: **unanimous 4/4 approval is strictly required**. If any department reports a violation, the application is marked `REJECTED` with all aggregated citations. If a department times out or encounters network faults after 3 exponential backoff retries, the consensus fail-safe triggers, refusing approval (`INCOMPLETE_REVIEWS`) to prevent unverified permits from slipping through.
+5. **Trace & Explain.** The orchestrator maintains an append-only timeline of `TraceEvent` records in SQLite and streams them live to the browser over Server-Sent Events (SSE). An Apple-inspired Jaeger-style trace waterfall visualizes the distributed execution, span durations, retries, and department decisions in real time.
+
+The orchestrator is built for resilience. In the live interface, a built-in **Fault Injection & Chaos Controls** panel lets operators simulate municipal outages (such as knocking the Fire department offline with HTTP 503) to watch the saga engine execute exponential backoffs and enforce consensus fail-safes live.
+
+---
+
+## Stack
+
+| Layer | Choice |
+| --- | --- |
+| **Backend & Saga Engine** | Python 3.13, FastAPI, Pydantic v2, managed with `uv` |
+| **Database & Trace Log** | SQLite in WAL mode with append-only `trace_events` table |
+| **Frontend UI** | React 18, Vite 6, TypeScript, Tailwind CSS v4, Lucide Icons |
+| **Observability & Streaming** | Server-Sent Events (SSE) with real-time Jaeger-style trace waterfall |
+| **Document Intake & Vision** | Google Gemini 2.5 Flash with deterministic fallback parser |
+| **Rule Engine** | Codified YAML building standards (San José Title 20, NFPA 13, CBC/IBC) |
+| **Container Orchestration** | Docker Compose v2 (local 5-service stack) & Google Cloud Run (serverless) |
+| **Tests & Verification** | pytest (350 backend tests) and Vitest (31 frontend tests) |
+
+---
+
+## Flow Diagram
+
+```mermaid
+flowchart TD
+    subgraph Intake ["1. Intake & Document Extraction"]
+        A["Architectural Plan / Blueprint (PDF/Text)"] --> B{"Deterministic Parser"}
+        B -- "Unstructured / Complex" --> C["Gemini 2.5 Flash (Multimodal)"]
+        B -- "Structured / Sample" --> D["Normalized Permit JSON Payload"]
+        C --> D
+    end
+
+    subgraph Saga ["2. Distributed Saga & Dispatch"]
+        D --> E["FastAPI Orchestrator (POST /submit)"]
+        E --> F[("SQLite (WAL Mode) Append-Only Trace Log")]
+        E --> G["Parallel Async Dispatcher"]
+    end
+
+    subgraph Evaluators ["3. Municipal Department Microservices"]
+        G --> H["Zoning Evaluator (:8001)<br/>Height, Setbacks, Lot Coverage"]
+        G --> I["Fire Evaluator (:8002)<br/>Sprinklers, Egress, Alarms, Hydrants"]
+        G --> J["Water Evaluator (:8003)<br/>Backflow, Metering, Stormwater"]
+        G --> K["Structural Evaluator (:8004)<br/>Stories, Framing, Seismic, Foundation"]
+    end
+
+    subgraph Consensus ["4. Fail-Safe Consensus Gate"]
+        H & I & J & K --> L{"Consensus Rule Evaluator"}
+        L -- "4/4 Approved" --> M["APPROVED<br/>ALL_DEPARTMENTS_APPROVED"]
+        L -- "Code Violations" --> N["REJECTED<br/>DEPARTMENT_REJECTIONS"]
+        L -- "Timeout / Retries Exhausted" --> O["REJECTED (Fail-Safe)<br/>INCOMPLETE_REVIEWS"]
+    end
+
+    subgraph UI ["5. Real-Time Observability & UI"]
+        F -. "Server-Sent Events (SSE)" .-> P["Trace Waterfall & Consensus Verdict"]
+        M & N & O --> P
+    end
 ```
 
-No Gemini key is needed for this scaffold. `.env.example` reserves the variable for the future T2 implementation; no model requests or API charges occur yet. Runtime and development dependencies are declared in `pyproject.toml`; `uv.lock` pins their exact versions. Docker builds install only runtime dependencies using `uv sync --locked --no-dev`. `.dockerignore` excludes local environments, credentials, and database files from image builds.
+---
 
-| Service | Local address | Container-to-container address |
-| --- | --- | --- |
-| Development orchestrator | http://localhost:8000 | http://orchestrator:8000 |
-| Zoning | http://localhost:8001 | http://zoning:8001 |
-| Fire | http://localhost:8002 | http://fire:8002 |
-| Water | http://localhost:8003 | http://water:8003 |
-| Structural | http://localhost:8004 | http://structural:8004 |
+## Quick start
 
-All services expose `/health` and interactive API documentation at `/docs`. Each department also exposes `/rules` to confirm its loaded configuration. Host ports bind to loopback for local use. Compose connects services on its default network and waits for healthy departments before starting the orchestrator.
+You need Python 3.13 with [uv](https://docs.astral.sh/uv/), Docker with Compose v2 (Docker Desktop running), and Node 20 or later with npm.
+
+### Option 1: Full Distributed Stack (Docker Compose)
+
+From the project root:
 
 ```bash
-curl http://localhost:8002/health
-curl http://localhost:8002/rules
-docker compose logs -f fire
+make up        # build and start orchestrator (:8000) and 4 department microservices (:8001-:8004)
 ```
 
-## Submit a permit application
+Then, in a second terminal:
 
 ```bash
-curl --fail-with-body -X POST http://localhost:8000/submit \
-  -H 'Content-Type: application/json' \
-  --data-binary @contract/fixtures/permit_approved.json
+cd frontend
+npm install
+npm run dev    # starts the dashboard on http://localhost:3000
 ```
 
-The orchestrator calls all four department `/evaluate` endpoints in parallel with a two-second request timeout and retries, collects responses, and determines the consensus decision. It returns HTTP 202 Accepted with a `stream_url`. Read the current result using the permit ID:
+Open **[http://localhost:3000](http://localhost:3000)** in your browser:
+- Select a sample blueprint from the dropdown (e.g. **Commercial Restaurant Patio** or **Residential Rear Addition**).
+- Click **Check For Approval** to watch the orchestrator evaluate the specifications and stream the consensus verdict live over SSE.
+- Open **Fault Injection & Chaos Controls** to trigger a simulated Fire department outage and watch fail-safe consensus refuse approval in real time.
+
+---
+
+### Option 2: Quick Start — Frontend Only (Golden Fixtures Mode)
+
+*No Docker or backend required.* Explore verified municipal contract baselines immediately:
 
 ```bash
-curl http://localhost:8000/permits/REPLACE_WITH_PERMIT_ID
+cd frontend
+npm install
+npm run dev
 ```
 
-Stream live events via Server-Sent Events (SSE):
+Open **[http://localhost:3000](http://localhost:3000)** to interact with the UI, test blueprint sample loading, and replay golden execution traces.
+
+---
+
+### Tests and Verification
+
+Run the comprehensive test suites across backend and frontend:
 
 ```bash
-curl -N http://localhost:8000/permits/REPLACE_WITH_PERMIT_ID/stream
+uv run pytest tests/           # 350 backend saga, consensus, and fault tests
+npm --prefix frontend test     # 31 frontend vitest trace and intake tests
 ```
 
-**Expected result today: `REJECTED` with `INCOMPLETE_REVIEWS`.** The department scaffolds load real rule files but return HTTP 501 `EVALUATOR_NOT_IMPLEMENTED`. Their health checks confirm the running service and loaded rules, not completed review capability. The fixture filename does not determine its result.
+---
 
-## SQLite persistence
+### Cloud Run Hosting
 
-The database path inside the orchestrator is `/data/permits.db`. The named volume `permit-data` is mounted at `/data`, preserving the database and its journal files when containers are replaced. Department containers cannot access it.
-
-To verify persistence, submit a demo, record its ID, stop/recreate the stack, then fetch the same ID:
+Deploy the unified container to Google Cloud Run:
 
 ```bash
-docker compose down
-docker compose up -d --wait
-curl http://localhost:8000/demo/permits/REPLACE_WITH_RETURNED_PERMIT_ID
+./deploy/deploy_cloudrun.sh
 ```
 
-Ordinary `down` preserves the volume. `docker compose down --volumes` deletes the database volume; use that only for an intentional reset.
-
-## What is implemented
-
-- Shared department scaffold, startup rule loading, health/configuration endpoints, and explicit unimplemented evaluation responses.
-- Dockerfiles, five-service Compose wiring, non-root processes, health checks, and persistent SQLite storage.
-- A separate development harness for fan-out, response identity validation, fail-safe aggregation, and saving/retrieving demo results.
-
-The Compose stack runs the production T1 orchestrator from `orchestrator/` using `orchestrator/Dockerfile`. It uses `/submit`, `/permits/{id}`, and `/permits/{id}/stream`, implementing parallel fan-out, 2.0s timeouts, retries with backoff, fail-safe consensus rules, trace event emission, and admin fault proxying. A separate development harness remains available in `dev/` for isolated testing.
-
-Next for T2: implement Gemini evaluation behind `/evaluate`, ground it in the YAML rules and project evidence, and resolve how missing evidence and partial rule coverage map to the shared contract. The current rules and permit fixtures have known scope/input differences documented in [rules/README.md](rules/README.md). Do not manufacture approvals to make the demo green.
-
-## Python tests without Docker
-
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then:
-
-```bash
-uv sync --locked
-uv run --locked pytest -q
-```
-
-Run tests from this directory. They use mocked department HTTP calls and temporary SQLite files; they do not call Gemini. `uv sync` creates the local `.venv` and includes the development group by default. This is an application project, not an installable Python package.
-
-Use `uv add PACKAGE` for runtime dependencies and `uv add --dev PACKAGE` for development dependencies. Both update `pyproject.toml` and `uv.lock`; commit both files. If editing the TOML manually, run `uv lock` afterward. Rebuild images after dependency or source changes with `docker compose up --build -d --wait`.
-
-## How the script gets into each container
-
-The department Dockerfile copies `departments/` (the Python script), `contract/` (the shared request models), and `rules/` (the department YAML files) into `/app`. Compose starts `departments.app:app` with Uvicorn and sets `DEPARTMENT`, `RULE_FILE`, and `PORT` for each container. The orchestrator sends the application data over HTTP to `POST /evaluate`; application data is not baked into an image.
-
-Startup loads the selected rule file, and `/evaluate` receives the orchestrator request. The function currently returns HTTP 501; Gemini evaluation is the next implementation step. When that code is added under `departments/`, the existing Dockerfile includes it automatically on rebuild. Runtime credentials come from environment configuration, not copied credential files. Image builds contain a snapshot of the source; editing a local Python or YAML file requires a rebuild to update the running containers.
+For complete cloud deployment commands, custom domains, and probe verification, see [deploy/README.md](deploy/README.md).

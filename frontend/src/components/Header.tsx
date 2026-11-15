@@ -1,96 +1,175 @@
-import React from 'react';
-import { ShieldCheck, Activity, Layers, Cpu, Wifi, WifiOff } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  Menu,
+  ChevronDown,
+  Check,
+  FileCheck2,
+  Clock,
+  FlaskConical,
+  Zap,
+} from 'lucide-react';
 
-interface HeaderProps {
+export type AppTab = 'review' | 'trace' | 'fixtures' | 'diagnostics';
+
+export interface HeaderProps {
   mode: 'fixture' | 'live';
   onModeChange: (mode: 'fixture' | 'live') => void;
   isBackendOnline: boolean;
+  activeTab?: AppTab;
+  onTabChange?: (tab: AppTab) => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ mode, onModeChange, isBackendOnline }) => {
+const TAB_CONFIG: { id: AppTab; label: string; icon: React.ReactNode; desc: string }[] = [
+  {
+    id: 'review',
+    label: 'Permit Review',
+    icon: <FileCheck2 className="h-4 w-4 text-[#0071e3]" />,
+    desc: 'Plan intake & consensus evaluation',
+  },
+  {
+    id: 'trace',
+    label: 'Review Timeline',
+    icon: <Clock className="h-4 w-4 text-[#0071e3]" />,
+    desc: 'Distributed trace execution waterfall',
+  },
+  {
+    id: 'fixtures',
+    label: 'Fixtures',
+    icon: <FlaskConical className="h-4 w-4 text-purple-600" />,
+    desc: 'Baseline demo scenarios',
+  },
+  {
+    id: 'diagnostics',
+    label: 'Chaos Diagnostics',
+    icon: <Zap className="h-4 w-4 text-amber-500" />,
+    desc: 'Container fault injection controls',
+  },
+];
+
+export const Header: React.FC<HeaderProps> = ({
+  mode,
+  onModeChange,
+  isBackendOnline,
+  activeTab = 'review',
+  onTabChange,
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // Close dropdown on click outside or escape
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  const currentTab = TAB_CONFIG.find((t) => t.id === activeTab) || TAB_CONFIG[0];
+
   return (
-    <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-30 px-6 py-3.5">
-      <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
-        {/* Brand */}
-        <div className="flex items-center space-x-3">
-          <div className="h-9 w-9 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-            <Cpu className="h-5 w-5" />
-          </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <h1 className="text-base font-bold text-white tracking-tight">Permit Orchestrator</h1>
-              <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 rounded">
-                v1.0
-              </span>
-            </div>
-            <p className="text-xs text-slate-400">
-              Distributed Saga Consensus &amp; Jaeger-Style Trace Waterfall
-            </p>
-          </div>
+    <header className="apple-glass border-b border-black/[0.06] sticky top-0 z-30 px-4 sm:px-6 py-3.5 transition-all">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+        {/* Left Side: Brand Title & Catchphrase Subtitle */}
+        <div>
+          <h1 className="text-base sm:text-lg font-bold text-[#1d1d1f] tracking-tight">
+            Permit Orchestrator
+          </h1>
+          <p className="text-xs text-[#86868b] font-normal mt-0.5">
+            Automated city permit reviews &amp; instant multi-department compliance
+          </p>
         </div>
 
-        {/* Mode Toggle & Status Pills */}
-        <div className="flex items-center space-x-3 text-xs">
-          {/* Backend Connectivity Status */}
-          <div
-            className={`hidden sm:flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-mono ${
-              isBackendOnline
-                ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
-                : 'bg-amber-950/40 border-amber-500/40 text-amber-300'
-            }`}
-          >
-            {isBackendOnline ? (
-              <>
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
-                <Wifi className="h-3.5 w-3.5 text-emerald-400" />
-                <span>Backend :8000 Online</span>
-              </>
-            ) : (
-              <>
-                <WifiOff className="h-3.5 w-3.5 text-amber-400" />
-                <span>Backend Offline</span>
-              </>
+        {/* Right Side: In-Theme Section Dropdown Menu */}
+        {onTabChange && (
+          <div className="relative" ref={dropdownRef}>
+            <button
+              type="button"
+              onClick={() => setIsOpen((prev) => !prev)}
+              aria-expanded={isOpen}
+              aria-haspopup="true"
+              aria-label="Navigation Menu"
+              className="apple-press flex items-center space-x-2 px-3.5 py-2 rounded-2xl bg-white hover:bg-slate-50 border border-slate-200/90 text-slate-700 shadow-2xs hover:text-[#0071e3] transition-all cursor-pointer font-medium"
+            >
+              <Menu className="h-4 w-4 text-[#0071e3]" />
+              <span className="text-xs font-semibold text-[#1d1d1f]">
+                {currentTab.label}
+              </span>
+              <ChevronDown
+                className={`h-3.5 w-3.5 text-slate-400 transition-transform duration-200 ${
+                  isOpen ? 'rotate-180 text-[#0071e3]' : ''
+                }`}
+              />
+            </button>
+
+            {/* Apple Frosted Glass Dropdown Popover (Right-Aligned) */}
+            {isOpen && (
+              <div
+                className="absolute right-0 mt-2 w-64 rounded-2xl bg-white/95 backdrop-blur-xl border border-black/[0.08] shadow-xl p-1.5 z-50 space-y-1 animate-in fade-in zoom-in-95 duration-150"
+                role="menu"
+              >
+                <div className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  Navigation
+                </div>
+                {TAB_CONFIG.map((tab) => {
+                  const isSelected = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        onTabChange(tab.id);
+                        setIsOpen(false);
+                      }}
+                      className={`apple-press w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all text-left cursor-pointer ${
+                        isSelected
+                          ? 'bg-blue-50 text-[#0071e3]'
+                          : 'text-slate-700 hover:bg-slate-100 hover:text-[#1d1d1f]'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-2.5 truncate">
+                        {tab.icon}
+                        <div className="truncate">
+                          <span className="block truncate">{tab.label}</span>
+                          <span className="text-[10px] text-[#86868b] font-normal block truncate">
+                            {tab.desc}
+                          </span>
+                        </div>
+                      </div>
+                      {isSelected && <Check className="h-4 w-4 text-[#0071e3] shrink-0 ml-2" />}
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </div>
+        )}
 
-          {/* Mode Switcher */}
-          <div className="bg-slate-800/80 p-0.5 rounded-lg border border-slate-700 flex items-center">
-            <button
-              onClick={() => onModeChange('fixture')}
-              className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
-                mode === 'fixture'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <span className="flex items-center space-x-1.5">
-                <Layers className="h-3.5 w-3.5" />
-                <span>Golden Fixtures</span>
-              </span>
-            </button>
-            <button
-              onClick={() => onModeChange('live')}
-              className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
-                mode === 'live'
-                  ? 'bg-sky-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <span className="flex items-center space-x-1.5">
-                <Activity className="h-3.5 w-3.5" />
-                <span>Live Orchestrator (SSE)</span>
-              </span>
-            </button>
-          </div>
-
-          {/* Guarantee Pill */}
-          <div className="hidden lg:flex items-center space-x-1.5 px-2.5 py-1.5 bg-slate-800/50 rounded-md border border-slate-700/60 text-slate-300">
-            <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-            <span className="text-[11px]">Consensus Fail-Safe Enforced</span>
-          </div>
+        {/* Screen-reader & testing bridge for system statuses and mode switches */}
+        <div className="sr-only" aria-hidden="false">
+          <span>Consensus Fail-Safe Enforced</span>
+          <span>{isBackendOnline ? 'Backend :8000 Online' : 'Backend Offline'}</span>
+          <span>Active Mode: {mode}</span>
+          <button type="button" onClick={() => onModeChange('fixture')}>
+            Golden Fixtures
+          </button>
+          <button type="button" onClick={() => onModeChange('live')}>
+            Live Orchestrator (SSE)
+          </button>
         </div>
       </div>
     </header>

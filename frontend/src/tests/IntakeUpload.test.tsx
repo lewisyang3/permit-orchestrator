@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import App from '../App';
 import { PermitForm } from '../components/PermitForm';
 import * as api from '../utils/api';
 import { FIXTURE_SCENARIOS } from '../fixtures';
@@ -200,6 +201,112 @@ describe('Intake Plan & PDF Parsing Component (Task T13)', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Network error loading sample plan')).toBeInTheDocument();
+    });
+  });
+
+  it('falls back to built-in sample permit when backend returns 404', async () => {
+    vi.spyOn(api, 'fetchSamplePlans').mockResolvedValue([
+      {
+        id: 'industrial_warehouse',
+        title: 'Storage Warehouse Modernization',
+        filename: 'warehouse_modernization_plan.txt',
+        description: 'Industrial storage logistics warehouse',
+        mime_type: 'text/plain',
+      },
+    ]);
+    vi.spyOn(api, 'fetchSamplePlan').mockRejectedValue(
+      new Error('Failed to fetch sample plan industrial_warehouse (404): {"detail":"Not Found"}')
+    );
+
+    const onChangeMock = vi.fn();
+
+    render(
+      <PermitForm
+        permit={samplePermit}
+        onChange={onChangeMock}
+        onSubmit={vi.fn()}
+        isSubmitting={false}
+        mode="live"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Storage Warehouse Modernization')).toBeInTheDocument();
+    });
+
+    const select = screen.getByRole('combobox');
+    fireEvent.change(select, { target: { value: 'industrial_warehouse' } });
+
+    await waitFor(() => {
+      expect(onChangeMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          project_title: 'Suburban Storage Warehouse Modernization',
+        })
+      );
+    });
+  });
+
+  it('determines approval based on selected sample plan data instead of reverting to default fixture', async () => {
+    vi.spyOn(api, 'fetchSamplePlans').mockResolvedValue([
+      {
+        id: 'commercial_restaurant',
+        title: 'Commercial Restaurant Patio',
+        filename: 'commercial_restaurant_plan.txt',
+        description: 'Commercial restaurant expansion',
+        mime_type: 'text/plain',
+      },
+    ]);
+    vi.spyOn(api, 'fetchSamplePlan').mockResolvedValue({
+      id: 'commercial_restaurant',
+      title: 'Commercial Restaurant Patio',
+      filename: 'commercial_restaurant_plan.txt',
+      description: 'Commercial restaurant expansion',
+      mime_type: 'text/plain',
+      sample_text: 'sample text',
+    });
+    vi.spyOn(api, 'parseIntakePlan').mockResolvedValue({
+      permit: {
+        ...samplePermit,
+        project_title: 'Commercial Restaurant Outdoor Dining Expansion',
+        fire: {
+          ...samplePermit.fire,
+          occupancy_type: 'commercial',
+          occupant_load: 140,
+          has_sprinkler_system: false,
+          egress_exits_count: 1,
+        },
+        water: {
+          ...samplePermit.water,
+          has_backflow_preventer: false,
+        },
+      },
+      filename: 'commercial_restaurant_plan.txt',
+      extracted_by: 'test',
+      warnings: [],
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Commercial Restaurant Patio')).toBeInTheDocument();
+    });
+
+    // Select commercial restaurant sample plan
+    const select = screen.getByRole('combobox');
+    fireEvent.change(select, { target: { value: 'commercial_restaurant' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Commercial Restaurant Outdoor Dining Expansion')).toBeInTheDocument();
+    });
+
+    const checkBtn = screen.getByRole('button', { name: /check for approval/i });
+    fireEvent.click(checkBtn);
+
+    // Should evaluate based on the data and detect fire/water violations
+    await waitFor(() => {
+      expect(screen.getByText('DEPARTMENT_REJECTIONS')).toBeInTheDocument();
+      expect(screen.getAllByText(/Commercial Restaurant Outdoor Dining Expansion/i).length).toBeGreaterThan(0);
+      expect(screen.getByText(/Rejected: Code Violations/i)).toBeInTheDocument();
     });
   });
 });

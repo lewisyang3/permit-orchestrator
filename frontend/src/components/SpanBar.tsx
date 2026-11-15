@@ -1,6 +1,6 @@
 import React from 'react';
 import { ParsedSpan } from '../utils/traceParser';
-import { formatDurationMs, getStatusColor } from '../utils/formatters';
+import { formatDurationMs } from '../utils/formatters';
 
 interface SpanBarProps {
   span: ParsedSpan;
@@ -20,20 +20,18 @@ export const SpanBar: React.FC<SpanBarProps> = ({
   const rawWidthPercent = (span.durationMs / safeTotal) * 100;
   const widthPercent = Math.min(100 - leftPercent, Math.max(0.8, rawWidthPercent));
 
-  const statusColors = getStatusColor(span.status);
-
   // Is this a retry span? (Multiple attempts)
   const hasRetries = span.attempts && span.attempts.length > 1;
 
   return (
     <div
       onClick={onClick}
-      className={`relative h-8 w-full rounded flex items-center cursor-pointer transition-all group ${
-        isSelected ? 'ring-2 ring-emerald-400 bg-slate-800/60' : 'hover:bg-slate-800/40'
+      className={`apple-press relative h-8 w-full rounded-xl flex items-center cursor-pointer transition-all group ${
+        isSelected ? 'ring-2 ring-blue-500 bg-blue-50/40' : 'hover:bg-slate-50'
       }`}
     >
       {/* Background track line */}
-      <div className="absolute inset-x-0 h-px bg-slate-800/50" />
+      <div className="absolute inset-x-0 h-px bg-slate-200" />
 
       {/* The Span Waterfall Bar */}
       <div
@@ -41,19 +39,19 @@ export const SpanBar: React.FC<SpanBarProps> = ({
           left: `${leftPercent}%`,
           width: `${widthPercent}%`,
         }}
-        className={`absolute h-5 rounded-md flex items-center transition-all ${
+        className={`absolute h-5 rounded-lg flex items-center transition-all shadow-xs ${
           span.status === 'TIMEOUT'
-            ? 'bg-rose-600/80 border border-rose-400 shadow-sm shadow-rose-950/40'
+            ? 'bg-rose-500 border border-rose-600/40'
             : span.status === 'REJECTED'
-            ? 'bg-amber-600/80 border border-amber-400 shadow-sm shadow-amber-950/40'
+            ? 'bg-amber-500 border border-amber-600/40'
             : span.status === 'APPROVED'
-            ? 'bg-emerald-600/80 border border-emerald-400 shadow-sm shadow-emerald-950/40'
-            : 'bg-sky-600/80 border border-sky-400 shadow-sm shadow-sky-950/40'
+            ? 'bg-emerald-500 border border-emerald-600/40'
+            : 'bg-blue-500 border border-blue-600/40'
         }`}
       >
         {/* If retries exist, draw attempt partitions within the bar */}
         {hasRetries ? (
-          <div className="flex h-full w-full rounded overflow-hidden">
+          <div className="flex h-full w-full rounded-lg overflow-hidden">
             {span.attempts.map((att, idx) => {
               const isLast = idx === span.attempts.length - 1;
               return (
@@ -61,12 +59,12 @@ export const SpanBar: React.FC<SpanBarProps> = ({
                   {/* Attempt duration bar */}
                   <div
                     title={`Attempt ${att.attempt} (${att.status})`}
-                    className={`h-full flex items-center justify-center text-[9px] font-mono font-bold text-white px-1 border-r border-slate-900/60 transition-all ${
+                    className={`h-full flex items-center justify-center text-[9px] font-mono font-bold text-white px-1 border-r border-black/20 transition-all ${
                       att.status === 'timed_out'
-                        ? 'bg-rose-700/90 hover:bg-rose-600'
+                        ? 'bg-rose-600 hover:bg-rose-700'
                         : att.status === 'success'
                         ? 'bg-emerald-600'
-                        : 'bg-rose-800'
+                        : 'bg-rose-700'
                     }`}
                     style={{ flex: att.durationMs || 2000 }}
                   >
@@ -77,7 +75,7 @@ export const SpanBar: React.FC<SpanBarProps> = ({
                   {!isLast && att.backoffMs && (
                     <div
                       title={`Backoff delay: ${att.backoffMs}ms`}
-                      className="h-full bg-slate-950/80 border-r border-slate-900/60 flex items-center justify-center text-[8px] font-mono text-slate-400"
+                      className="h-full bg-slate-800/80 border-r border-black/20 flex items-center justify-center text-[8px] font-mono text-slate-300"
                       style={{ flex: att.backoffMs }}
                     >
                       <span className="truncate">+{att.backoffMs}ms</span>
@@ -88,7 +86,7 @@ export const SpanBar: React.FC<SpanBarProps> = ({
             })}
           </div>
         ) : (
-          <div className="px-2 w-full flex items-center justify-between text-[10px] font-mono font-medium text-white/90">
+          <div className="px-2 w-full flex items-center justify-between text-[10px] font-mono font-bold text-white">
             <span className="truncate">{formatDurationMs(span.durationMs)}</span>
           </div>
         )}
@@ -101,11 +99,11 @@ export const SpanBar: React.FC<SpanBarProps> = ({
         }}
         className="absolute hidden sm:flex items-center space-x-1.5 text-[11px] font-mono whitespace-nowrap"
       >
-        <span className={`font-semibold ${statusColors.text}`}>
+        <span className="font-bold text-[#1d1d1f]">
           {formatDurationMs(span.durationMs)}
         </span>
         {hasRetries && (
-          <span className="px-1.5 py-0.2 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded text-[9px] font-sans font-bold">
+          <span className="px-1.5 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 rounded-full text-[9px] font-sans font-bold">
             {span.attempts.length} Attempts
           </span>
         )}

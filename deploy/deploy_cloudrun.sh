@@ -4,7 +4,7 @@
 # ==============================================================================
 set -euo pipefail
 
-SERVICE_NAME="${SERVICE_NAME:-permit-orchestrator-hello}"
+SERVICE_NAME="${SERVICE_NAME:-permit-orchestrator}"
 REGION="${REGION:-us-central1}"
 PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || echo 'permit-orchestrator-dev')}"
 IMAGE_NAME="${IMAGE_NAME:-gcr.io/${PROJECT_ID}/${SERVICE_NAME}:latest}"
@@ -12,7 +12,7 @@ PORT="${PORT:-8080}"
 ALLOW_UNAUTHENTICATED="${ALLOW_UNAUTHENTICATED:-true}"
 
 echo "=========================================================="
-echo " Deploying Permit Orchestrator Hello-World to Cloud Run"
+echo " Deploying Permit Orchestrator to Google Cloud Run"
 echo "=========================================================="
 echo "Service Name : ${SERVICE_NAME}"
 echo "Project ID   : ${PROJECT_ID}"
@@ -44,8 +44,10 @@ gcloud run deploy "${SERVICE_NAME}" \
     --region "${REGION}" \
     --platform managed \
     --port "${PORT}" \
+    --memory 1Gi \
+    --cpu 1 \
     ${AUTH_FLAG} \
-    --set-env-vars "DATABASE_PATH=/data/permits.db"
+    --set-env-vars "DATABASE_PATH=/tmp/permits.db,UPLOADS_DIR=/tmp/uploads"
 
 SERVICE_URL=$(gcloud run services describe "${SERVICE_NAME}" --region "${REGION}" --format='value(status.url)')
 echo "Deployment completed successfully!"
