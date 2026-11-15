@@ -268,7 +268,10 @@ async def get_permit_status(
                 pass
 
         if event:
-            await event.wait()
+            try:
+                await asyncio.wait_for(event.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                pass
             status_item = _lookup_permit(permit_id, request)
         else:
             # Poll SQLite database for up to 5 seconds
