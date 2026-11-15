@@ -10,7 +10,8 @@ from __future__ import annotations
 import asyncio
 import inspect
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 from uuid import uuid4
 
 import httpx
@@ -38,7 +39,7 @@ from contract.models import (
 )
 from orchestrator.consensus import evaluate_consensus
 from orchestrator.dispatcher import get_default_endpoints, resolve_endpoint_url
-from orchestrator.handlers import admin_router, submit_router, stream_router
+from orchestrator.handlers import admin_router, intake_router, stream_router, submit_router
 from orchestrator.handlers.submit import broadcaster
 
 
@@ -335,10 +336,11 @@ def create_app(
 
     app.include_router(admin_router)
     app.include_router(submit_router)
+    app.include_router(intake_router)
     app.include_router(stream_router)
 
     # Flatten included routes onto app.routes for direct route inspection compatibility
-    for router_item in (admin_router, submit_router, stream_router):
+    for router_item in (admin_router, submit_router, stream_router, intake_router):
         for route in router_item.routes:
             if route not in app.routes:
                 app.routes.append(route)

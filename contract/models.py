@@ -308,3 +308,28 @@ class StreamDonePayload(BaseModel):
 
 
 StreamDoneEvent = StreamDonePayload
+
+
+class IntakeParseRequest(BaseModel):
+    filename: str = "plan.pdf"
+    content_base64: Optional[str] = None
+    content_text: Optional[str] = None
+    mime_type: Optional[str] = "application/pdf"
+
+
+class IntakeParseResponse(BaseModel):
+    permit: Permit
+    filename: str
+    file_path: Optional[str] = None
+    extracted_by: str = "gemini-2.5-flash"
+    warnings: List[str] = Field(default_factory=list)
+
+
+class SamplePlanInfo(BaseModel):
+    id: str
+    title: str
+    filename: str
+    description: str
+    mime_type: str
+    sample_text: Optional[str] = None
+

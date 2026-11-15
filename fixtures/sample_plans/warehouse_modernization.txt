@@ -1,0 +1,45 @@
+INDUSTRIAL BUILDING PLAN SPECIFICATIONS
+Project Title: Suburban Storage Warehouse Modernization
+Project Description: Structural retrofit and automated racking system installation for high-bay logistics facility.
+Estimated Cost: $650,000 USD
+
+Property Location:
+Address: 4800 Industrial Parkway
+City: Columbus
+State: OH
+Zip: 43228
+
+Applicant Information:
+Name: Bruce Wayne
+Role: engineer
+Email: bwayne@wayneenterprises.com
+Phone: (555) 234-5678
+
+Zoning Parameters:
+Zone District: M-1 (Light Industrial)
+Building Height: 34.0 ft
+Lot Area: 45,000 sq ft
+Proposed Footprint: 18,500 sq ft
+Front Setback: 40.0 ft
+Rear Setback: 35.0 ft
+Side Setback: 20.0 ft
+
+Fire Life Safety:
+Occupancy Type: industrial
+Occupant Load: 45 persons
+Fire Alarm System: Yes (Addressable multi-zone)
+Automatic Sprinklers: Yes (ESFR ceiling fire suppression)
+Egress Exits Count: 4 exit doors
+Distance to Nearest Fire Hydrant: 110 ft
+
+Water & Utilities:
+Water Service Meter Size: 2.0 inches
+Estimated Daily Water Usage: 750 gpd
+Backflow Preventer Installed: Yes (RPZ assembly)
+Stormwater Management Plan: Yes (Detention basin)
+
+Structural Engineering:
+Stories: 2 stories
+Framing Construction: reinforced_concrete
+Seismic Design Category: C
+Foundation Type: deep_pile

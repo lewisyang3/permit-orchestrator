@@ -3,6 +3,11 @@
 from orchestrator.handlers.admin import (
     router as admin_router,
 )
+from orchestrator.handlers.intake import (
+    deterministic_plan_parse,
+    parse_plan_document,
+    router as intake_router,
+)
 from orchestrator.handlers.stream import (
     get_live_browser_page,
     get_permit_status,
@@ -23,6 +28,9 @@ from orchestrator.handlers.submit import (
 
 __all__ = [
     "admin_router",
+    "intake_router",
+    "parse_plan_document",
+    "deterministic_plan_parse",
     "EventBroadcaster",
     "broadcaster",
     "get_broadcaster",
