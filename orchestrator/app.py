@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from uuid import uuid4
 
 import httpx
@@ -43,7 +43,13 @@ from orchestrator.dispatcher import get_default_endpoints, resolve_endpoint_url
 class OrchestratorApp:
     """Encapsulates in-memory saga state storage and orchestrator dispatch logic."""
 
-    def __init__(self):
+    def __init__(
+        self,
+        endpoints: Optional[Dict[str, str]] = None,
+        http_client: Optional[httpx.AsyncClient] = None,
+        backoff_delays: Optional[Sequence[float]] = None,
+        timeout_seconds: Optional[float] = None,
+    ):
         self.permits_db: Dict[str, PermitStatusResponse] = {}
         self.permit_events: Dict[str, asyncio.Event] = {}
         self.trace_events: Dict[str, List[TraceEvent]] = {}
@@ -51,6 +57,10 @@ class OrchestratorApp:
         self.background_tasks: set[asyncio.Task[Any]] = set()
         self.custom_dispatcher: Optional[Callable[..., Any]] = None
         self.custom_consensus: Optional[Callable[..., Any]] = None
+        self.endpoints: Optional[Dict[str, str]] = endpoints
+        self.http_client: Optional[httpx.AsyncClient] = http_client
+        self.backoff_delays: Optional[Sequence[float]] = backoff_delays
+        self.timeout_seconds: Optional[float] = timeout_seconds
 
     def reset(self) -> None:
         self.permits_db.clear()
@@ -111,7 +121,21 @@ class OrchestratorApp:
         # 2. Use orchestrator.dispatcher
         from orchestrator.dispatcher import dispatch_permit
 
-        return await dispatch_permit(permit=permit, trace_id=trace_id, on_event=on_event)
+        kwargs: Dict[str, Any] = {
+            "permit": permit,
+            "trace_id": trace_id,
+            "on_event": on_event,
+        }
+        if self.endpoints is not None:
+            kwargs["endpoints"] = self.endpoints
+        if self.http_client is not None:
+            kwargs["client"] = self.http_client
+        if self.backoff_delays is not None:
+            kwargs["backoff_delays"] = self.backoff_delays
+        if self.timeout_seconds is not None:
+            kwargs["timeout_seconds"] = self.timeout_seconds
+
+        return await dispatch_permit(**kwargs)
 
     def call_consensus(
         self, department_results: Dict[str, DepartmentResultSummary]
@@ -243,6 +267,10 @@ class OrchestratorApp:
 def create_app(
     dispatcher_override: Optional[Callable[..., Any]] = None,
     consensus_override: Optional[Callable[..., Any]] = None,
+    endpoints: Optional[Dict[str, str]] = None,
+    http_client: Optional[httpx.AsyncClient] = None,
+    backoff_delays: Optional[Sequence[float]] = None,
+    timeout_seconds: Optional[float] = None,
 ) -> FastAPI:
     """Create and configure the FastAPI orchestrator application."""
     app = FastAPI(title="Permit Orchestrator", version="1.0.0")
@@ -256,7 +284,12 @@ def create_app(
         allow_headers=["*"],
     )
 
-    orchestrator_state = OrchestratorApp()
+    orchestrator_state = OrchestratorApp(
+        endpoints=endpoints,
+        http_client=http_client,
+        backoff_delays=backoff_delays,
+        timeout_seconds=timeout_seconds,
+    )
     if dispatcher_override is not None:
         orchestrator_state.custom_dispatcher = dispatcher_override
     if consensus_override is not None:
@@ -431,7 +464,7 @@ def create_app(
                 detail="Department is required for admin fault injection",
             )
 
-        endpoints = get_default_endpoints()
+        endpoints = orchestrator_state.endpoints or get_default_endpoints()
         dept_url = endpoints.get(req.department.value)
         if not dept_url:
             raise HTTPException(
@@ -440,21 +473,32 @@ def create_app(
             )
 
         fault_url = resolve_endpoint_url(dept_url).replace("/evaluate", "/fault")
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            try:
-                resp = await client.post(fault_url, json=req.model_dump(mode="json"))
-                resp.raise_for_status()
-                return FaultControlResponse.model_validate(resp.json())
-            except httpx.HTTPStatusError as exc:
-                raise HTTPException(
-                    status_code=exc.response.status_code,
-                    detail=f"Department fault injection failed: {exc.response.text}",
-                )
-            except Exception as exc:
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail=f"Failed to communicate with department service: {exc}",
-                )
+
+        async def _execute_post(target_client: httpx.AsyncClient) -> FaultControlResponse:
+            resp = await target_client.post(
+                fault_url,
+                json=req.model_dump(mode="json"),
+                timeout=5.0,
+            )
+            resp.raise_for_status()
+            return FaultControlResponse.model_validate(resp.json())
+
+        try:
+            if orchestrator_state.http_client is not None:
+                return await _execute_post(orchestrator_state.http_client)
+            else:
+                async with httpx.AsyncClient(timeout=5.0) as default_client:
+                    return await _execute_post(default_client)
+        except httpx.HTTPStatusError as exc:
+            raise HTTPException(
+                status_code=exc.response.status_code,
+                detail=f"Department fault injection failed: {exc.response.text}",
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to communicate with department service: {exc}",
+            )
 
     @app.get(
         "/admin/fault",
@@ -462,31 +506,35 @@ def create_app(
         summary="Get active fault configuration for all departments",
     )
     async def admin_get_fault():
-        endpoints = get_default_endpoints()
+        endpoints = orchestrator_state.endpoints or get_default_endpoints()
 
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            async def fetch_fault(dept: DepartmentName) -> Tuple[str, FaultControlResponse]:
-                dept_url = endpoints.get(dept.value)
-                if not dept_url:
-                    return dept.value, FaultControlResponse(
-                        department=dept, mode=FaultControlRequest().mode, message="Endpoint unconfigured"
-                    )
+        async def fetch_fault(dept: DepartmentName, http_c: httpx.AsyncClient) -> Tuple[str, FaultControlResponse]:
+            dept_url = endpoints.get(dept.value)
+            if not dept_url:
+                return dept.value, FaultControlResponse(
+                    department=dept, mode=FaultControlRequest().mode, message="Endpoint unconfigured"
+                )
 
-                fault_url = resolve_endpoint_url(dept_url).replace("/evaluate", "/fault")
-                try:
-                    resp = await client.get(fault_url)
-                    if resp.status_code == 200:
-                        return dept.value, FaultControlResponse.model_validate(resp.json())
-                    return dept.value, FaultControlResponse(
-                        department=dept, mode=FaultControlRequest().mode, message=f"HTTP {resp.status_code}"
-                    )
-                except Exception as exc:
-                    return dept.value, FaultControlResponse(
-                        department=dept, mode=FaultControlRequest().mode, message=f"Offline / Unreachable: {exc}"
-                    )
+            fault_url = resolve_endpoint_url(dept_url).replace("/evaluate", "/fault")
+            try:
+                resp = await http_c.get(fault_url, timeout=3.0)
+                if resp.status_code == 200:
+                    return dept.value, FaultControlResponse.model_validate(resp.json())
+                return dept.value, FaultControlResponse(
+                    department=dept, mode=FaultControlRequest().mode, message=f"HTTP {resp.status_code}"
+                )
+            except Exception as exc:
+                return dept.value, FaultControlResponse(
+                    department=dept, mode=FaultControlRequest().mode, message=f"Offline / Unreachable: {exc}"
+                )
 
-            pairs = await asyncio.gather(*[fetch_fault(d) for d in DepartmentName])
+        if orchestrator_state.http_client is not None:
+            pairs = await asyncio.gather(*[fetch_fault(d, orchestrator_state.http_client) for d in DepartmentName])
             results: Dict[str, FaultControlResponse] = dict(pairs)
+        else:
+            async with httpx.AsyncClient(timeout=3.0) as default_client:
+                pairs = await asyncio.gather(*[fetch_fault(d, default_client) for d in DepartmentName])
+                results: Dict[str, FaultControlResponse] = dict(pairs)
 
         return AdminFaultResponse(
             zoning=results["zoning"],

@@ -331,6 +331,11 @@ def test_one_call_switch_and_recovery_done_criterion(fire_client, sample_permit)
     assert fire_client.post("/evaluate", json=eval_payload).status_code not in (500, 503)
 
 
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
 @pytest.mark.anyio
 async def test_orchestrator_dispatcher_integration_with_real_department_fault(sample_permit):
     """
