@@ -69,9 +69,11 @@ from orchestrator.handlers.submit import (
     get_permit_event,
     permit_events,
     permit_tasks,
+    permit_trace_ids,
     reset_submit_state,
     router,
     run_permit_saga,
+    submitted_permits,
 )
 
 
@@ -826,3 +828,250 @@ async def test_event_broadcaster_late_subscriber_receives_none_immediately():
     q = broadcaster.subscribe(permit_id)
     val = await q.get()
     assert val is None
+
+
+@pytest.mark.anyio
+async def test_submit_blank_permit_id_and_idempotency_key(test_db, sample_permit_dict):
+    """Verify whitespace-only permit_id and Idempotency-Key assign unique UUIDs."""
+    app = FastAPI()
+    app.include_router(router)
+    app.state.db_path = test_db
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        payload = dict(sample_permit_dict)
+        payload["permit_id"] = "   "
+
+        # 1. Blank permit_id gets unique uuid and stream_url with no '//'
+        resp1 = await client.post("/submit", json=payload)
+        assert resp1.status_code == 202
+        data1 = resp1.json()
+        id1 = data1["permit_id"]
+        assert id1.strip() != ""
+        assert "//" not in data1["stream_url"]
+
+        resp2 = await client.post("/submit", json=payload)
+        assert resp2.status_code == 202
+        data2 = resp2.json()
+        id2 = data2["permit_id"]
+        assert id2.strip() != ""
+        assert id1 != id2
+        assert "//" not in data2["stream_url"]
+
+        # 2. Blank Idempotency-Key header gets unique uuid
+        payload_no_id = dict(sample_permit_dict)
+        payload_no_id.pop("permit_id", None)
+
+        resp3 = await client.post("/submit", json=payload_no_id, headers={"Idempotency-Key": "   "})
+        assert resp3.status_code == 202
+        data3 = resp3.json()
+        id3 = data3["permit_id"]
+        assert id3.strip() != ""
+        assert "//" not in data3["stream_url"]
+
+        resp4 = await client.post("/submit", json=payload_no_id, headers={"Idempotency-Key": "   "})
+        assert resp4.status_code == 202
+        data4 = resp4.json()
+        id4 = data4["permit_id"]
+        assert id4.strip() != ""
+        assert id3 != id4
+        assert "//" not in data4["stream_url"]
+
+
+@pytest.mark.anyio
+async def test_submit_rollback_tracking_on_setup_failure(test_db, sample_permit_dict, monkeypatch):
+    """Verify tracking state is rolled back when setup fails and permit can be resubmitted."""
+    app = FastAPI()
+    app.include_router(router)
+    app.state.db_path = test_db
+
+    permit_id = "permit-rollback-test"
+    payload = dict(sample_permit_dict)
+    payload["permit_id"] = permit_id
+
+    # 1. Monkeypatch db.save_permit to raise an error
+    def mock_save_permit(*args, **kwargs):
+        raise RuntimeError("Simulated DB save failure")
+
+    monkeypatch.setattr(db, "save_permit", mock_save_permit)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://test",
+    ) as client:
+        resp = await client.post("/submit", json=payload)
+        assert resp.status_code == 500
+
+        # Assert tracking state was cleanly discarded
+        assert permit_id not in permit_trace_ids
+        assert permit_id not in submitted_permits
+        assert permit_id not in permit_events
+
+        # 2. Restore save_permit and resubmit
+        monkeypatch.undo()
+
+        resp2 = await client.post("/submit?wait=true", json=payload)
+        assert resp2.status_code == 202
+
+        # Verify saga ran to DECIDED in database
+        saved = db.get_permit(permit_id, db_path=test_db)
+        assert saved is not None
+        assert saved.state == SagaState.DECIDED
+
+        # Verify module dicts hold no leftover entry
+        assert permit_id not in permit_tasks
+        assert permit_id not in permit_events
+
+
+@pytest.mark.anyio
+async def test_submit_stale_permit_resubmit_reruns_saga(test_db, sample_permit_dict):
+    """Verify resubmitting a stale (non-live, non-DECIDED) record reruns saga with original trace_id."""
+    app = FastAPI()
+    app.include_router(router)
+    app.state.db_path = test_db
+
+    permit_id = "permit-stale-rerun"
+    orig_trace = "stale-trace-999"
+    p = Permit.model_validate({**sample_permit_dict, "permit_id": permit_id})
+    from datetime import datetime, timezone
+    created_at = datetime.now(timezone.utc)
+
+    # Seed SQLite with a stale RECEIVED record (no task running, no event set)
+    db.save_permit(
+        permit_id=permit_id,
+        payload=p,
+        state=SagaState.RECEIVED,
+        created_at=created_at,
+        trace_id=orig_trace,
+        db_path=test_db,
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        resp = await client.post("/submit?wait=true", json=p.model_dump(mode="json"))
+        assert resp.status_code == 202
+        assert resp.json()["trace_id"] == orig_trace
+
+        # Verify saga executed and updated the record to DECIDED
+        updated = db.get_permit(permit_id, db_path=test_db)
+        assert updated is not None
+        assert updated.state == SagaState.DECIDED
+        assert updated.trace_id == orig_trace
+
+
+@pytest.mark.anyio
+async def test_submit_duplicate_wait_true_timeout(test_db, sample_permit_dict):
+    """Verify duplicate wait=true against an orphaned event returns within submit_wait_timeout."""
+    app = FastAPI()
+    app.include_router(router)
+    app.state.db_path = test_db
+    app.state.submit_wait_timeout = 0.05
+
+    permit_id = "permit-orphaned-event"
+    # Seed orphaned event that is never set and has no active task
+    permit_events[permit_id] = asyncio.Event()
+    permit_trace_ids[permit_id] = "orphaned-trace-id"
+
+    payload = dict(sample_permit_dict)
+    payload["permit_id"] = permit_id
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # Wrap client call in timeout to prove it returns instead of hanging
+        resp = await asyncio.wait_for(
+            client.post("/submit?wait=true", json=payload, headers={"Idempotency-Key": permit_id}),
+            timeout=2.0,
+        )
+        assert resp.status_code == 202
+        assert resp.json()["permit_id"] == permit_id
+        assert resp.json()["trace_id"] == "orphaned-trace-id"
+
+
+@pytest.mark.anyio
+async def test_submit_replay_decided_permit_returns_decided_state(test_db, sample_permit_dict):
+    """Verify replaying an already decided permit with Idempotency-Key returns state=DECIDED."""
+    app = FastAPI()
+    app.include_router(router)
+    app.state.db_path = test_db
+
+    permit_id = "permit-replay-decided"
+    payload = dict(sample_permit_dict)
+    payload["permit_id"] = permit_id
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        resp1 = await client.post("/submit?wait=true", json=payload, headers={"Idempotency-Key": "key-decided-replay"})
+        assert resp1.status_code == 202
+
+        saved = db.get_permit(permit_id, db_path=test_db)
+        assert saved is not None
+        assert saved.state == SagaState.DECIDED
+
+        # Replay with same Idempotency-Key
+        resp2 = await client.post("/submit", json=payload, headers={"Idempotency-Key": "key-decided-replay"})
+        assert resp2.status_code == 202
+        assert resp2.json()["state"] == SagaState.DECIDED.value
+
+
+@pytest.mark.anyio
+async def test_submit_consensus_override_plain_strings(test_db, sample_permit_dict):
+    """Verify custom consensus_override returning plain strings records approved decision."""
+    app = FastAPI()
+    app.include_router(router)
+    app.state.db_path = test_db
+    app.state.consensus_override = lambda results, *args: (
+        "APPROVED",
+        "ALL_DEPARTMENTS_APPROVED",
+        "Approved via plain strings override",
+        [],
+    )
+
+    permit_id = "permit-consensus-str"
+    payload = dict(sample_permit_dict)
+    payload["permit_id"] = permit_id
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        resp = await client.post("/submit?wait=true", json=payload)
+        assert resp.status_code == 202
+
+        rec = db.get_permit(permit_id, db_path=test_db)
+        assert rec is not None
+        assert rec.state == SagaState.DECIDED
+        decision_val = rec.final_decision.value if hasattr(rec.final_decision, "value") else str(rec.final_decision)
+        assert decision_val.upper() == "APPROVED"
+        code_val = rec.decision_code.value if hasattr(rec.decision_code, "value") else str(rec.decision_code)
+        assert code_val != DecisionCode.INCOMPLETE_REVIEWS.value
+
+
+@pytest.mark.anyio
+async def test_event_broadcaster_clear_does_not_cancel_permit_tasks():
+    """Verify calling clear() on an EventBroadcaster instance does not cancel permit_tasks."""
+    app_broadcaster = EventBroadcaster()
+
+    async def dummy_coro():
+        await asyncio.sleep(10)
+
+    dummy_task = asyncio.create_task(dummy_coro())
+    permit_tasks["dummy-permit-task"] = dummy_task
+    try:
+        app_broadcaster.clear()
+        assert not dummy_task.done()
+        assert "dummy-permit-task" in permit_tasks
+    finally:
+        dummy_task.cancel()
+        try:
+            await dummy_task
+        except asyncio.CancelledError:
+            pass
+        permit_tasks.pop("dummy-permit-task", None)

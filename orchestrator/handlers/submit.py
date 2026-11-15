@@ -103,18 +103,11 @@ class EventBroadcaster:
                 pass
 
     def clear(self) -> None:
-        """Clear all active subscriptions and submission tracking."""
+        """Clear all active subscriptions for this broadcaster instance."""
         for permit_id in list(self._subscribers.keys()):
             self.close(permit_id)
         self._subscribers.clear()
         self._closed_permits.clear()
-        submitted_permits.clear()
-        permit_trace_ids.clear()
-        permit_events.clear()
-        for task in list(permit_tasks.values()):
-            if not task.done():
-                task.cancel()
-        permit_tasks.clear()
 
 
 # Default singleton broadcaster instance
@@ -134,10 +127,18 @@ permit_tasks: Dict[str, asyncio.Task] = {}
 submitted_permits: Dict[str, SubmitPermitResponse] = {}
 permit_trace_ids: Dict[str, str] = {}
 _submission_lock = asyncio.Lock()
+DUPLICATE_WAIT_TIMEOUT_S = 30.0
 
 
 def reset_submit_state() -> None:
     """Clear all active and recorded permit submission tracking."""
+    for task in list(permit_tasks.values()):
+        if not task.done():
+            task.cancel()
+    permit_tasks.clear()
+    permit_events.clear()
+    submitted_permits.clear()
+    permit_trace_ids.clear()
     broadcaster.clear()
 
 
@@ -155,6 +156,56 @@ def get_permit_event(permit_id: str, app: Optional[Any] = None) -> Optional[asyn
 def get_permit_task(permit_id: str) -> Optional[asyncio.Task]:
     """Retrieve active background task for a permit saga."""
     return permit_tasks.get(permit_id)
+
+
+def _enum_value(x: Any) -> str:
+    """Return x.value if x has a value attribute, else str(x)."""
+    return x.value if hasattr(x, "value") else str(x)
+
+
+def _saga_is_live(permit_id: str) -> bool:
+    """Return True if a saga task is running or a completion event is not set."""
+    task = permit_tasks.get(permit_id)
+    if task is not None and not task.done():
+        return True
+    ev = permit_events.get(permit_id)
+    if ev is not None and not ev.is_set():
+        return True
+    return False
+
+
+def _discard_tracking(
+    permit_id: str,
+    state_sink: Optional[Any] = None,
+    created_sink_record: bool = False,
+    saga_coro: Optional[Any] = None,
+) -> None:
+    """Roll back module and state_sink tracking entries when saga setup fails."""
+    permit_trace_ids.pop(permit_id, None)
+    submitted_permits.pop(permit_id, None)
+    permit_events.pop(permit_id, None)
+    if state_sink is not None:
+        if hasattr(state_sink, "permit_events"):
+            state_sink.permit_events.pop(permit_id, None)
+        if created_sink_record and hasattr(state_sink, "permits_db"):
+            state_sink.permits_db.pop(permit_id, None)
+    if saga_coro is not None:
+        try:
+            saga_coro.close()
+        except Exception:
+            pass
+
+
+def _resolve_permit_id(raw_id: Optional[str], idem_key: Optional[str]) -> Tuple[str, bool]:
+    """Resolve permit ID and client-provided status from raw permit ID and idempotency key."""
+    s_raw = str(raw_id).strip() if raw_id is not None else ""
+    s_key = str(idem_key).strip() if idem_key is not None else ""
+    has_client_id = bool(s_raw or s_key)
+    if s_raw:
+        return s_raw, has_client_id
+    if s_key:
+        return s_key, has_client_id
+    return str(uuid4()), False
 
 
 async def run_permit_saga(
@@ -347,8 +398,8 @@ async def run_permit_saga(
             ts=decided_time,
             detail={
                 "state": SagaState.DECIDED.value,
-                "final_decision": final_decision.value,
-                "decision_code": decision_code.value,
+                "final_decision": _enum_value(final_decision),
+                "decision_code": _enum_value(decision_code),
                 "decision_summary": summary,
                 "violations": violations,
             },
@@ -470,17 +521,13 @@ async def submit_permit(
     if request is not None and hasattr(request, "headers"):
         raw_header_key = request.headers.get("x-idempotency-key") or request.headers.get("idempotency-key")
     effective_idemp_key = idempotency_key or raw_header_key
+    if effective_idemp_key is not None:
+        effective_idemp_key = str(effective_idemp_key).strip()
+        if not effective_idemp_key:
+            effective_idemp_key = None
 
-    has_client_id = bool(permit.permit_id or effective_idemp_key)
-    if not permit.permit_id and effective_idemp_key:
-        permit_id = str(effective_idemp_key).strip()
-        permit = permit.model_copy(update={"permit_id": permit_id})
-    elif permit.permit_id:
-        permit_id = str(permit.permit_id).strip()
-        if permit.permit_id != permit_id:
-            permit = permit.model_copy(update={"permit_id": permit_id})
-    else:
-        permit_id = str(uuid4())
+    permit_id, has_client_id = _resolve_permit_id(permit.permit_id, effective_idemp_key)
+    if permit.permit_id != permit_id:
         permit = permit.model_copy(update={"permit_id": permit_id})
 
     # Resolve db module and db_path
@@ -500,191 +547,258 @@ async def submit_permit(
         if request is not None and hasattr(request.app.state, "orchestrator"):
             state_sink = request.app.state.orchestrator
 
-        is_in_flight = permit_id in permit_events or permit_id in permit_tasks
-        if not is_in_flight and state_sink is not None and hasattr(state_sink, "permits_db"):
-            sink_rec = state_sink.permits_db.get(permit_id)
-            if sink_rec is not None and sink_rec.state != SagaState.DECIDED:
-                is_in_flight = True
-
+        is_in_flight = _saga_is_live(permit_id)
         should_check_idempotency = bool(effective_idemp_key or idempotent or is_in_flight)
 
         is_known = False
         existing_trace_id: Optional[str] = None
         existing_state: SagaState = SagaState.RECEIVED
+        stale_trace_id: Optional[str] = None
+        completion_ev: Optional[asyncio.Event] = None
 
-        if has_client_id and should_check_idempotency:
+        if has_client_id:
             # 1. Check in-flight tasks / events first
-            if permit_id in permit_events or permit_id in permit_tasks:
-                is_known = True
-                existing_trace_id = permit_trace_ids.get(permit_id)
+            if is_in_flight:
+                if should_check_idempotency:
+                    is_known = True
+                    existing_trace_id = permit_trace_ids.get(permit_id)
+                    completion_ev = permit_events.get(permit_id)
+                    if completion_ev is None and state_sink is not None and hasattr(state_sink, "permit_events"):
+                        completion_ev = state_sink.permit_events.get(permit_id)
 
             # 2. Check state_sink in-memory permits_db if state_sink is present
             if not is_known and state_sink is not None and hasattr(state_sink, "permits_db"):
                 if permit_id in state_sink.permits_db:
-                    is_known = True
                     mem_rec = state_sink.permits_db[permit_id]
-                    existing_trace_id = getattr(mem_rec, "trace_id", None)
-                    existing_state = getattr(mem_rec, "state", SagaState.RECEIVED)
+                    rec_state = getattr(mem_rec, "state", SagaState.RECEIVED)
+                    rec_trace = getattr(mem_rec, "trace_id", None)
+                    if rec_state == SagaState.DECIDED:
+                        if should_check_idempotency:
+                            is_known = True
+                            existing_trace_id = rec_trace
+                            existing_state = rec_state
+                    else:
+                        stale_trace_id = rec_trace or permit_trace_ids.get(permit_id)
+                        if not stale_trace_id and db_module is not None and hasattr(db_module, "get_permit"):
+                            try:
+                                db_rec = db_module.get_permit(permit_id, db_path=db_path)
+                                if db_rec is not None and db_rec.trace_id:
+                                    stale_trace_id = db_rec.trace_id
+                            except Exception:
+                                pass
 
             # 3. Check SQLite DB if db_path is configured or state_sink is not used
-            if not is_known and (db_path is not None or state_sink is None):
+            if not is_known and stale_trace_id is None and (db_path is not None or state_sink is None):
                 if db_module is not None and hasattr(db_module, "get_permit"):
                     try:
                         db_rec = db_module.get_permit(permit_id, db_path=db_path)
                         if db_rec is not None:
-                            is_known = True
-                            existing_trace_id = db_rec.trace_id
-                            existing_state = db_rec.state
+                            if db_rec.state == SagaState.DECIDED:
+                                if should_check_idempotency:
+                                    is_known = True
+                                    existing_trace_id = db_rec.trace_id
+                                    existing_state = db_rec.state
+                            else:
+                                stale_trace_id = db_rec.trace_id or permit_trace_ids.get(permit_id)
                     except Exception:
                         pass
 
             # 4. Check app-scoped or module submitted permits fallback
-            if not is_known and state_sink is None and db_path is None:
+            if not is_known and stale_trace_id is None and should_check_idempotency and state_sink is None and db_path is None:
                 if permit_id in submitted_permits:
                     is_known = True
                     existing_trace_id = submitted_permits[permit_id].trace_id
+                    existing_state = submitted_permits[permit_id].state
 
         if is_known:
             if not existing_trace_id:
                 existing_trace_id = permit_trace_ids.get(permit_id, str(uuid4()))
-            completion_ev = permit_events.get(permit_id)
+            if completion_ev is None:
+                completion_ev = permit_events.get(permit_id)
             if completion_ev is None and state_sink is not None and hasattr(state_sink, "permit_events"):
                 completion_ev = state_sink.permit_events.get(permit_id)
         else:
-            trace_id = str(uuid4())
+            trace_id = stale_trace_id or str(uuid4())
             created_at = datetime.now(timezone.utc)
-            permit_trace_ids[permit_id] = trace_id
+            saga_coro = None
+            created_sink_record = False
 
-            submit_resp = SubmitPermitResponse(
-                permit_id=permit_id,
-                trace_id=trace_id,
-                state=SagaState.RECEIVED,
-                stream_url=f"/permits/{permit_id}/stream",
-            )
-            submitted_permits[permit_id] = submit_resp
+            try:
+                permit_trace_ids[permit_id] = trace_id
 
-            # Completion event
-            completion_event = asyncio.Event()
-            permit_events[permit_id] = completion_event
-            if state_sink is not None and hasattr(state_sink, "permit_events"):
-                state_sink.permit_events[permit_id] = completion_event
-
-            # 1. Persist permit record to SQLite with SagaState.RECEIVED
-            if db_module is not None and hasattr(db_module, "save_permit"):
-                db_module.save_permit(
+                submit_resp = SubmitPermitResponse(
                     permit_id=permit_id,
-                    payload=permit,
-                    state=SagaState.RECEIVED,
-                    created_at=created_at,
                     trace_id=trace_id,
+                    state=SagaState.RECEIVED,
+                    stream_url=f"/permits/{permit_id}/stream",
+                )
+                submitted_permits[permit_id] = submit_resp
+
+                # Completion event
+                completion_event = asyncio.Event()
+                permit_events[permit_id] = completion_event
+                if state_sink is not None and hasattr(state_sink, "permit_events"):
+                    state_sink.permit_events[permit_id] = completion_event
+
+                # 1. Persist or update permit record in SQLite with SagaState.RECEIVED
+                if db_module is not None:
+                    if stale_trace_id is not None:
+                        if hasattr(db_module, "update_permit_state"):
+                            db_module.update_permit_state(
+                                permit_id=permit_id,
+                                state=SagaState.RECEIVED,
+                                db_path=db_path,
+                            )
+                    elif hasattr(db_module, "save_permit"):
+                        db_module.save_permit(
+                            permit_id=permit_id,
+                            payload=permit,
+                            state=SagaState.RECEIVED,
+                            created_at=created_at,
+                            trace_id=trace_id,
+                            db_path=db_path,
+                        )
+
+                # 2. Emit root TraceEvent (TraceEventType.PERMIT_RECEIVED) to SQLite and event broker
+                root_event = TraceEvent(
+                    event_id=f"evt-{uuid4().hex[:8]}",
+                    trace_id=trace_id,
+                    permit_id=permit_id,
+                    span=SpanId.ORCHESTRATOR,
+                    parent_span=None,
+                    type=TraceEventType.PERMIT_RECEIVED,
+                    ts=created_at,
+                    detail={
+                        "project_title": permit.project_title,
+                        "applicant": permit.applicant.name if permit.applicant else "Unknown",
+                        "state": SagaState.RECEIVED.value,
+                    },
+                )
+                if db_module is not None and hasattr(db_module, "append_trace_event"):
+                    db_module.append_trace_event(root_event, db_path=db_path)
+
+                # Active broadcaster
+                active_broadcaster = broadcaster
+                if request is not None and hasattr(request.app.state, "broadcaster"):
+                    active_broadcaster = request.app.state.broadcaster
+                if hasattr(active_broadcaster, "open"):
+                    active_broadcaster.open(permit_id)
+
+                active_broadcaster.publish(permit_id, root_event)
+
+                # Resolve overrides, endpoints, and state sink
+                dispatcher_fn = None
+                consensus_fn = None
+                endpoints = None
+
+                if request is not None:
+                    if hasattr(request.app.state, "endpoints") and request.app.state.endpoints:
+                        endpoints = request.app.state.endpoints
+                    if hasattr(request.app.state, "dispatcher_override") and request.app.state.dispatcher_override is not None:
+                        dispatcher_fn = request.app.state.dispatcher_override
+                    if hasattr(request.app.state, "consensus_override") and request.app.state.consensus_override is not None:
+                        consensus_fn = request.app.state.consensus_override
+                    if state_sink is not None:
+                        if endpoints is None and hasattr(state_sink, "endpoints") and state_sink.endpoints:
+                            endpoints = state_sink.endpoints
+                        if state_sink.custom_dispatcher is not None:
+                            dispatcher_fn = state_sink.custom_dispatcher
+                        if state_sink.custom_consensus is not None:
+                            consensus_fn = state_sink.custom_consensus
+                        # Initialize in-memory status record for backward compatibility
+                        initial_dept_results = {
+                            dept.value: DepartmentResultSummary(
+                                status=DepartmentStatus.PENDING,
+                                attempts=0,
+                                latency_ms=0.0,
+                                reasons=[],
+                            )
+                            for dept in DepartmentName
+                        }
+                        initial_status = PermitStatusResponse(
+                            permit_id=permit_id,
+                            trace_id=trace_id,
+                            state=SagaState.RECEIVED,
+                            final_decision=FinalDecision.PENDING,
+                            decision_code=DecisionCode.PENDING,
+                            created_at=created_at,
+                            department_results=initial_dept_results,
+                        )
+                        was_in_sink = permit_id in state_sink.permits_db
+                        state_sink.permits_db[permit_id] = initial_status
+                        if not was_in_sink:
+                            created_sink_record = True
+                        state_sink.record_event(permit_id, root_event)
+
+                saga_coro = run_permit_saga(
+                    permit_id=permit_id,
+                    trace_id=trace_id,
+                    permit=permit,
+                    broadcaster_inst=active_broadcaster,
+                    dispatcher_fn=dispatcher_fn,
+                    consensus_fn=consensus_fn,
+                    endpoints=endpoints,
+                    event=completion_event,
+                    db_module=db_module,
                     db_path=db_path,
+                    state_sink=state_sink,
                 )
 
-            # 2. Emit root TraceEvent (TraceEventType.PERMIT_RECEIVED) to SQLite and event broker
-            root_event = TraceEvent(
-                event_id=f"evt-{uuid4().hex[:8]}",
-                trace_id=trace_id,
-                permit_id=permit_id,
-                span=SpanId.ORCHESTRATOR,
-                parent_span=None,
-                type=TraceEventType.PERMIT_RECEIVED,
-                ts=created_at,
-                detail={
-                    "project_title": permit.project_title,
-                    "applicant": permit.applicant.name if permit.applicant else "Unknown",
-                    "state": SagaState.RECEIVED.value,
-                },
-            )
-            if db_module is not None and hasattr(db_module, "append_trace_event"):
-                db_module.append_trace_event(root_event, db_path=db_path)
-
-            # Active broadcaster
-            active_broadcaster = broadcaster
-            if request is not None and hasattr(request.app.state, "broadcaster"):
-                active_broadcaster = request.app.state.broadcaster
-            if hasattr(active_broadcaster, "open"):
-                active_broadcaster.open(permit_id)
-
-            active_broadcaster.publish(permit_id, root_event)
-
-            # Resolve overrides, endpoints, and state sink
-            dispatcher_fn = None
-            consensus_fn = None
-            endpoints = None
-
-            if request is not None:
-                if hasattr(request.app.state, "endpoints") and request.app.state.endpoints:
-                    endpoints = request.app.state.endpoints
-                if hasattr(request.app.state, "dispatcher_override") and request.app.state.dispatcher_override is not None:
-                    dispatcher_fn = request.app.state.dispatcher_override
-                if hasattr(request.app.state, "consensus_override") and request.app.state.consensus_override is not None:
-                    consensus_fn = request.app.state.consensus_override
-                if state_sink is not None:
-                    if endpoints is None and hasattr(state_sink, "endpoints") and state_sink.endpoints:
-                        endpoints = state_sink.endpoints
-                    if state_sink.custom_dispatcher is not None:
-                        dispatcher_fn = state_sink.custom_dispatcher
-                    if state_sink.custom_consensus is not None:
-                        consensus_fn = state_sink.custom_consensus
-                    # Initialize in-memory status record for backward compatibility
-                    initial_dept_results = {
-                        dept.value: DepartmentResultSummary(
-                            status=DepartmentStatus.PENDING,
-                            attempts=0,
-                            latency_ms=0.0,
-                            reasons=[],
-                        )
-                        for dept in DepartmentName
-                    }
-                    initial_status = PermitStatusResponse(
-                        permit_id=permit_id,
-                        trace_id=trace_id,
-                        state=SagaState.RECEIVED,
-                        final_decision=FinalDecision.PENDING,
-                        decision_code=DecisionCode.PENDING,
-                        created_at=created_at,
-                        department_results=initial_dept_results,
-                    )
-                    state_sink.permits_db[permit_id] = initial_status
-                    state_sink.record_event(permit_id, root_event)
-
-            saga_coro = run_permit_saga(
-                permit_id=permit_id,
-                trace_id=trace_id,
-                permit=permit,
-                broadcaster_inst=active_broadcaster,
-                dispatcher_fn=dispatcher_fn,
-                consensus_fn=consensus_fn,
-                endpoints=endpoints,
-                event=completion_event,
-                db_module=db_module,
-                db_path=db_path,
-                state_sink=state_sink,
-            )
-
-            if not wait:
-                task = asyncio.create_task(saga_coro)
-                if state_sink is not None and hasattr(state_sink, "background_tasks"):
-                    state_sink.background_tasks.add(task)
-                    task.add_done_callback(state_sink.background_tasks.discard)
-                permit_tasks[permit_id] = task
-                task.add_done_callback(lambda _: permit_tasks.pop(permit_id, None))
-                task.add_done_callback(lambda _: permit_events.pop(permit_id, None))
+                if not wait:
+                    task = asyncio.create_task(saga_coro)
+                    if state_sink is not None and hasattr(state_sink, "background_tasks"):
+                        state_sink.background_tasks.add(task)
+                        task.add_done_callback(state_sink.background_tasks.discard)
+                    permit_tasks[permit_id] = task
+                    task.add_done_callback(lambda _: permit_tasks.pop(permit_id, None))
+                    task.add_done_callback(lambda _: permit_events.pop(permit_id, None))
+                    if state_sink is not None and hasattr(state_sink, "permit_events"):
+                        task.add_done_callback(lambda _: state_sink.permit_events.pop(permit_id, None))
+            except BaseException:
+                _discard_tracking(
+                    permit_id=permit_id,
+                    state_sink=state_sink,
+                    created_sink_record=created_sink_record,
+                    saga_coro=saga_coro,
+                )
+                raise
 
     if is_known:
         if wait and completion_ev is not None and existing_state != SagaState.DECIDED:
-            await completion_ev.wait()
+            timeout_s = DUPLICATE_WAIT_TIMEOUT_S
+            if request is not None and hasattr(request.app.state, "submit_wait_timeout"):
+                custom_timeout = request.app.state.submit_wait_timeout
+                if custom_timeout is not None:
+                    timeout_s = float(custom_timeout)
+            try:
+                await asyncio.wait_for(completion_ev.wait(), timeout=timeout_s)
+            except asyncio.TimeoutError:
+                pass
+
+            refreshed = False
             if db_module is not None and hasattr(db_module, "get_permit"):
                 try:
                     updated = db_module.get_permit(permit_id, db_path=db_path)
-                    if updated is not None and updated.trace_id:
-                        existing_trace_id = updated.trace_id
+                    if updated is not None:
+                        refreshed = True
+                        if updated.trace_id:
+                            existing_trace_id = updated.trace_id
+                        if updated.state:
+                            existing_state = updated.state
                 except Exception:
                     pass
+            if not refreshed and state_sink is not None and hasattr(state_sink, "permits_db"):
+                mem_rec = state_sink.permits_db.get(permit_id)
+                if mem_rec is not None:
+                    if getattr(mem_rec, "trace_id", None):
+                        existing_trace_id = mem_rec.trace_id
+                    if getattr(mem_rec, "state", None):
+                        existing_state = mem_rec.state
+
         return SubmitPermitResponse(
             permit_id=permit_id,
             trace_id=existing_trace_id,
-            state=SagaState.RECEIVED,
+            state=existing_state,
             stream_url=f"/permits/{permit_id}/stream",
         )
 
@@ -693,5 +807,7 @@ async def submit_permit(
             await saga_coro
         finally:
             permit_events.pop(permit_id, None)
+            if state_sink is not None and hasattr(state_sink, "permit_events"):
+                state_sink.permit_events.pop(permit_id, None)
 
     return submit_resp
