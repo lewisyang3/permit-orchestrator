@@ -8,6 +8,7 @@ import { PermitForm } from './components/PermitForm';
 import { FaultControlPanel } from './components/FaultControlPanel';
 import { FIXTURE_SCENARIOS, FixtureScenario } from './fixtures';
 import { parseTraceEvents, ParsedSpan } from './utils/traceParser';
+import { evaluatePermitData } from './utils/permitEvaluator';
 import { TraceEvent, Permit } from './types';
 import { checkBackendHealth, submitPermit } from './utils/api';
 import { Activity, RotateCcw, AlertCircle, Radio, CheckCircle2 } from 'lucide-react';
@@ -178,11 +179,55 @@ export const App: React.FC = () => {
     }
   };
 
+  // Evaluate current permit data and stream generated trace events
+  const handleCheckApproval = (permitToEvaluate: Permit = currentPermit) => {
+    if (simulationTimerRef.current) {
+      clearInterval(simulationTimerRef.current);
+      simulationTimerRef.current = null;
+    }
+
+    if (mode === 'live' && isBackendOnline) {
+      handleSubmitLive();
+      return;
+    }
+
+    // Evaluate current permit data deterministically against municipal codes
+    const generatedEvents = evaluatePermitData(permitToEvaluate);
+
+    const isTest =
+      (globalThis as any).process?.env?.NODE_ENV === 'test' ||
+      (import.meta as any).env?.MODE === 'test';
+
+    if (isTest) {
+      setActiveEvents(generatedEvents);
+      setIsSimulating(false);
+      return;
+    }
+
+    setActiveEvents([]);
+    setIsSimulating(true);
+
+    let idx = 0;
+    simulationTimerRef.current = setInterval(() => {
+      if (idx < generatedEvents.length) {
+        const nextEvt = generatedEvents[idx];
+        setActiveEvents((prev) => [...prev, nextEvt]);
+        idx++;
+      } else {
+        if (simulationTimerRef.current) {
+          clearInterval(simulationTimerRef.current);
+          simulationTimerRef.current = null;
+        }
+        setIsSimulating(false);
+      }
+    }, 100);
+  };
+
   const handleSubmit = () => {
-    if (mode === 'live') {
+    if (mode === 'live' && isBackendOnline) {
       handleSubmitLive();
     } else {
-      handleSimulateReplay(selectedScenario);
+      handleCheckApproval(currentPermit);
     }
   };
 
@@ -306,7 +351,7 @@ export const App: React.FC = () => {
                   if (mode === 'live') {
                     handleSubmitLive();
                   } else {
-                    handleSimulateReplay(selectedScenario);
+                    handleCheckApproval(currentPermit);
                   }
                 }}
                 disabled={isSimulating || isSubmittingLive || isStreamingLive}
