@@ -1,0 +1,12 @@
+# Builds both images on Cloud Build (linux/amd64) and pushes them to Artifact Registry.
+# Invoked by scripts/deploy_cloud_run.sh.
+substitutions:
+  _REPO: us-central1-docker.pkg.dev/PROJECT/permit-orchestrator
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "-f", "departments/Dockerfile", "-t", "${_REPO}/department:latest", "."]
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "-f", "orchestrator/Dockerfile", "-t", "${_REPO}/orchestrator:latest", "."]
+images:
+  - ${_REPO}/department:latest
+  - ${_REPO}/orchestrator:latest

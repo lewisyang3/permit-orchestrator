@@ -11,4 +11,6 @@ COPY contract ./contract
 COPY departments ./departments
 COPY rules ./rules
 USER appuser
-CMD ["python", "-m", "uvicorn", "departments.app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Cloud Run injects PORT; Compose overrides the command with its own port.
+ENV PORT=8000
+CMD ["sh", "-c", "exec python -m uvicorn departments.app:app --host 0.0.0.0 --port \"${PORT}\""]
