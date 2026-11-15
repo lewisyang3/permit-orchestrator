@@ -1,0 +1,18 @@
+# ==============================================================================
+# Cloud Build Configuration for Permit Orchestrator Full Demo Stack (Task T10)
+# ==============================================================================
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - '$_IMAGE_NAME'
+      - '-f'
+      - 'deploy/cloudrun.Dockerfile'
+      - '.'
+
+images:
+  - '$_IMAGE_NAME'
+
+substitutions:
+  _IMAGE_NAME: ''
