@@ -549,6 +549,19 @@ def get_permit(
             return None
 
         dept_results = _query_department_results(conn, permit_id)
+        for dept in (
+            DepartmentName.ZONING.value,
+            DepartmentName.FIRE.value,
+            DepartmentName.WATER.value,
+            DepartmentName.STRUCTURAL.value,
+        ):
+            if dept not in dept_results:
+                dept_results[dept] = DepartmentResultSummary(
+                    status=DepartmentStatus.PENDING,
+                    attempts=0,
+                    latency_ms=0.0,
+                    reasons=[],
+                )
 
         # Resolve trace_id
         trace_id = row["trace_id"]

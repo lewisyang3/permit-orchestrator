@@ -211,7 +211,8 @@ def test_save_and_get_permit_with_pydantic_model(test_db_path: Path, sample_perm
     assert status_resp.final_decision == FinalDecision.PENDING
     assert status_resp.decision_code == DecisionCode.PENDING
     assert status_resp.decided_at is None
-    assert status_resp.department_results == {}
+    assert set(status_resp.department_results.keys()) == {"zoning", "fire", "water", "structural"}
+    assert all(d.status == DepartmentStatus.PENDING for d in status_resp.department_results.values())
 
     # Verify payload extraction helpers
     payload_dict = get_permit_payload(permit_id, db_path=test_db_path)
@@ -717,3 +718,68 @@ def test_special_characters_and_unicode_handling(test_db_path: Path):
     events = get_trace_events(permit_id, db_path=test_db_path)
     assert len(events) == 1
     assert events[0].detail["message"] == "Café approved! ☕🎉"
+
+
+def test_get_permit_schema_conformance_for_inflight_and_decided_permits(
+    test_db_path: Path, sample_permit: Permit
+):
+    """Verify that get_permit returns objects fully conforming to permit_status_response.schema.json."""
+    from jsonschema import Draft7Validator, FormatChecker
+    from referencing import Registry, Resource
+
+    schemas_dir = Path("contract/schemas")
+    resources = []
+    for p in schemas_dir.glob("*.json"):
+        s = json.loads(p.read_text())
+        resources.append((p.name, Resource.from_contents(s)))
+    registry = Registry().with_resources(resources)
+    schema = json.loads((schemas_dir / "permit_status_response.schema.json").read_text())
+    validator = Draft7Validator(schema, registry=registry, format_checker=FormatChecker())
+
+    permit_id = "p-schema-test-1"
+    # 1. In-flight permit (state: RECEIVED, no department results written yet)
+    save_permit(
+        permit_id=permit_id,
+        payload=sample_permit,
+        state=SagaState.RECEIVED,
+        trace_id="tr-schema-1",
+        db_path=test_db_path,
+    )
+    inflight = get_permit(permit_id, db_path=test_db_path)
+    assert inflight is not None
+    data_inflight = inflight.model_dump(mode="json")
+    errors = list(validator.iter_errors(data_inflight))
+    assert not errors, f"In-flight permit schema validation failed: {errors}"
+
+    # 2. Decided permit with actual department results
+    save_department_result(
+        permit_id=permit_id,
+        department=DepartmentName.ZONING,
+        status=DepartmentStatus.APPROVED,
+        attempts=1,
+        latency_ms=12.5,
+        reasons=[
+            EvaluationReason(
+                rule_id="ZON-1",
+                rule_name="Height check",
+                passed=True,
+                message="Height within limit",
+                severity=RuleSeverity.INFO,
+            )
+        ],
+        db_path=test_db_path,
+    )
+    update_permit_decision(
+        permit_id=permit_id,
+        state=SagaState.DECIDED,
+        final_decision=FinalDecision.APPROVED,
+        decision_code=DecisionCode.ALL_DEPARTMENTS_APPROVED,
+        decision_summary="All departments approved",
+        db_path=test_db_path,
+    )
+    decided = get_permit(permit_id, db_path=test_db_path)
+    assert decided is not None
+    data_decided = decided.model_dump(mode="json")
+    errors_decided = list(validator.iter_errors(data_decided))
+    assert not errors_decided, f"Decided permit schema validation failed: {errors_decided}"
+
