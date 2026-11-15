@@ -269,19 +269,8 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 1: Permit Review (The Clean Welcoming Citizen Flow) */}
+        {/* TAB 1: Permit Review (The Clean User-Centered Home Flow) */}
         <div className={`space-y-6 ${activeTab === 'review' ? 'block' : 'hidden'}`}>
-          {/* Fixture Scenario Presets (when in Golden Fixtures Mode) */}
-          {mode === 'fixture' && (
-            <FixtureSelector
-              selectedId={selectedScenario.id}
-              onSelect={handleSelectScenario}
-              onSimulateReplay={handleSimulateReplay}
-              isSimulating={isSimulating}
-              onViewPermitJson={handleSelectScenario}
-            />
-          )}
-
           {/* Permit Submission Payload & Architectural Plan Intake */}
           <PermitForm
             permit={currentPermit}
@@ -336,7 +325,34 @@ export const App: React.FC = () => {
           />
         </div>
 
-        {/* TAB 3: Chaos Diagnostics (Department container failure modes) */}
+        {/* TAB 3: Fixtures (Baseline Testing & Contract Scenarios) */}
+        <div className={`space-y-6 ${activeTab === 'fixtures' ? 'block' : 'hidden'}`}>
+          <div className="bg-white rounded-3xl border border-black/[0.06] p-5 shadow-xs">
+            <h2 className="text-sm font-bold text-[#1d1d1f] tracking-tight mb-1">
+              Baseline Test Scenarios
+            </h2>
+            <p className="text-xs text-[#86868b] font-normal">
+              Pre-configured contract scenarios to verify multi-department approval consensus, code violation rejections, and fail-safe timeout guarantees.
+            </p>
+          </div>
+
+          {mode === 'fixture' && (
+            <FixtureSelector
+              selectedId={selectedScenario.id}
+              onSelect={(sc) => {
+                handleSelectScenario(sc);
+              }}
+              onSimulateReplay={handleSimulateReplay}
+              isSimulating={isSimulating}
+              onViewPermitJson={(sc) => {
+                handleSelectScenario(sc);
+                setActiveTab('review');
+              }}
+            />
+          )}
+        </div>
+
+        {/* TAB 4: Chaos Diagnostics (Department container failure modes) */}
         <div className={`space-y-6 ${activeTab === 'diagnostics' ? 'block' : 'hidden'}`}>
           <FaultControlPanel
             onRunFaultDemo={handleRunFaultDemo}
