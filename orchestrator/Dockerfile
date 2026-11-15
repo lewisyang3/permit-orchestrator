@@ -7,7 +7,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project \
     && useradd --uid 10001 --create-home appuser \
-    && mkdir -p /data && chown appuser:appuser /data
+    && mkdir -p /data /app/uploads && chown -R appuser:appuser /data /app/uploads
 COPY contract ./contract
 COPY orchestrator ./orchestrator
 COPY rules ./rules

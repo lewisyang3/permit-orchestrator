@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Permit, SamplePlanInfo, IntakeParseResponse } from '../types';
 import { parseIntakePlan, fetchSamplePlans, fetchSamplePlan } from '../utils/api';
+import { FIXTURE_SCENARIOS } from '../fixtures';
 import {
   FileText,
   MapPin,
@@ -24,6 +25,12 @@ interface PermitFormProps {
   isSubmitting: boolean;
   mode: 'fixture' | 'live';
 }
+
+const FALLBACK_SAMPLE_PERMITS: Record<string, Permit> = {
+  residential_addition: FIXTURE_SCENARIOS.approved.permit,
+  commercial_restaurant: FIXTURE_SCENARIOS.rejected.permit,
+  industrial_warehouse: FIXTURE_SCENARIOS.timeout.permit,
+};
 
 export const PermitForm: React.FC<PermitFormProps> = ({
   permit,
@@ -148,7 +155,20 @@ export const PermitForm: React.FC<PermitFormProps> = ({
       setIntakeResult(res);
       onChange(res.permit);
     } catch (err: any) {
-      setIntakeError(err.message || 'Failed to parse sample plan');
+      const fallbackPermit = FALLBACK_SAMPLE_PERMITS[planId];
+      if (fallbackPermit && (err.message?.includes('404') || err.message?.includes('Failed to fetch sample plan'))) {
+        onChange(fallbackPermit);
+        setIntakeResult({
+          permit: fallbackPermit,
+          filename: `${planId}_plan.txt`,
+          file_path: null,
+          extracted_by: 'built-in-fixture-fallback',
+          warnings: [],
+        });
+        setIntakeError(null);
+      } else {
+        setIntakeError(err.message || 'Failed to parse sample plan');
+      }
     } finally {
       setIsParsingPlan(false);
     }

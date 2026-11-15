@@ -202,4 +202,46 @@ describe('Intake Plan & PDF Parsing Component (Task T13)', () => {
       expect(screen.getByText('Network error loading sample plan')).toBeInTheDocument();
     });
   });
+
+  it('falls back to built-in sample permit when backend returns 404', async () => {
+    vi.spyOn(api, 'fetchSamplePlans').mockResolvedValue([
+      {
+        id: 'industrial_warehouse',
+        title: 'Storage Warehouse Modernization',
+        filename: 'warehouse_modernization_plan.txt',
+        description: 'Industrial storage logistics warehouse',
+        mime_type: 'text/plain',
+      },
+    ]);
+    vi.spyOn(api, 'fetchSamplePlan').mockRejectedValue(
+      new Error('Failed to fetch sample plan industrial_warehouse (404): {"detail":"Not Found"}')
+    );
+
+    const onChangeMock = vi.fn();
+
+    render(
+      <PermitForm
+        permit={samplePermit}
+        onChange={onChangeMock}
+        onSubmit={vi.fn()}
+        isSubmitting={false}
+        mode="live"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Storage Warehouse Modernization')).toBeInTheDocument();
+    });
+
+    const select = screen.getByRole('combobox');
+    fireEvent.change(select, { target: { value: 'industrial_warehouse' } });
+
+    await waitFor(() => {
+      expect(onChangeMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          project_title: 'Suburban Storage Warehouse Modernization',
+        })
+      );
+    });
+  });
 });

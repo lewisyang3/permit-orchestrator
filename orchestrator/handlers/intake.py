@@ -43,7 +43,7 @@ logger = logging.getLogger("orchestrator.intake")
 DEFAULT_MODEL = "gemini-2.5-flash"
 DEFAULT_API_BASE = "https://generativelanguage.googleapis.com"
 DEFAULT_TIMEOUT_SECONDS = 5.0
-UPLOADS_DIR = Path("uploads")
+UPLOADS_DIR = Path(os.environ.get("UPLOADS_DIR", "/data/uploads" if Path("/data").is_dir() else "uploads"))
 
 router = APIRouter(prefix="/intake", tags=["intake"])
 
@@ -666,6 +666,21 @@ async def parse_intake_plan(req: IntakeParseRequest) -> IntakeParseResponse:
     response_model=List[SamplePlanInfo],
     summary="List available built-in sample architectural plans",
 )
+@router.get(
+    "/sample-plans/",
+    response_model=List[SamplePlanInfo],
+    include_in_schema=False,
+)
+@router.get(
+    "/samples",
+    response_model=List[SamplePlanInfo],
+    include_in_schema=False,
+)
+@router.get(
+    "/samples/",
+    response_model=List[SamplePlanInfo],
+    include_in_schema=False,
+)
 async def list_sample_plans() -> List[SamplePlanInfo]:
     """Return catalog of built-in sample architectural plans for intake testing."""
     return list(SAMPLE_PLANS.values())
@@ -675,6 +690,21 @@ async def list_sample_plans() -> List[SamplePlanInfo]:
     "/sample-plans/{plan_id}",
     response_model=SamplePlanInfo,
     summary="Get details and sample text for a specific built-in plan",
+)
+@router.get(
+    "/sample-plans/{plan_id}/",
+    response_model=SamplePlanInfo,
+    include_in_schema=False,
+)
+@router.get(
+    "/samples/{plan_id}",
+    response_model=SamplePlanInfo,
+    include_in_schema=False,
+)
+@router.get(
+    "/sample/{plan_id}",
+    response_model=SamplePlanInfo,
+    include_in_schema=False,
 )
 async def get_sample_plan(plan_id: str) -> SamplePlanInfo:
     """Retrieve sample plan by ID."""
