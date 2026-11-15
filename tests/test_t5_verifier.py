@@ -350,26 +350,28 @@ def test_live_browser_endpoint_serves_interactive_ui(isolated_db: Path):
     assert "text/html" in live_resp.headers["content-type"]
     live_html = live_resp.text
 
-    # Both endpoints serve the identical interactive live dashboard
-    assert root_html == live_html
-    assert "<!DOCTYPE html>" in root_html
-    assert "Permit Orchestrator - Live Browser Saga Stream" in root_html
+    # Endpoints serve interactive live dashboard (GET /live preserves the standalone HTML UI,
+    # while GET / serves the T10 production UI or standalone UI)
+    assert "<!doctype html>" in root_html.lower()
+    assert "<!doctype html>" in live_html.lower()
+    assert "Permit Orchestrator" in root_html
+    assert "Permit Orchestrator - Live Browser Saga Stream" in live_html
 
-    # Check key UI features and EventSource logic
-    assert "new EventSource(url)" in root_html
-    assert "es.addEventListener('trace_event'" in root_html
-    assert "es.addEventListener('done'" in root_html
-    assert "cardZoning" in root_html
-    assert "cardFire" in root_html
-    assert "cardWater" in root_html
-    assert "cardStructural" in root_html
-    assert "trace-list" in root_html
-    assert "btnSubmit" in root_html
-    assert "btnConnectExisting" in root_html
+    # Check key UI features and EventSource logic on the standalone live dashboard
+    assert "new EventSource(url)" in live_html
+    assert "es.addEventListener('trace_event'" in live_html
+    assert "es.addEventListener('done'" in live_html
+    assert "cardZoning" in live_html
+    assert "cardFire" in live_html
+    assert "cardWater" in live_html
+    assert "cardStructural" in live_html
+    assert "trace-list" in live_html
+    assert "btnSubmit" in live_html
+    assert "btnConnectExisting" in live_html
 
-    # Check self-contained / zero external script tags
-    assert "http://" not in root_html.lower() or "http://localhost" in root_html or "http://testserver" in root_html
-    assert "<script src=" not in root_html  # Embedded JS, no third-party CDN scripts
+    # Check self-contained / zero external script tags on standalone dashboard
+    assert "http://" not in live_html.lower() or "http://localhost" in live_html or "http://testserver" in live_html
+    assert "<script src=" not in live_html  # Embedded JS, no third-party CDN scripts
 
 
 # ==============================================================================
