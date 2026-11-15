@@ -1,0 +1,240 @@
+[
+  {
+    "event_id": "evt-rej-001",
+    "trace_id": "trc-rej-002",
+    "permit_id": "pm-fixture-rejected-fire-002",
+    "span": "orchestrator",
+    "parent_span": null,
+    "type": "PERMIT_RECEIVED",
+    "ts": "2026-11-13T16:34:40.000Z",
+    "detail": {
+      "project_title": "Downtown Community Bistro & Micro-Venue",
+      "applicant": "Jordan Chen",
+      "state": "RECEIVED"
+    }
+  },
+  {
+    "event_id": "evt-rej-002",
+    "trace_id": "trc-rej-002",
+    "permit_id": "pm-fixture-rejected-fire-002",
+    "span": "dept:zoning",
+    "parent_span": "orchestrator",
+    "type": "SPAN_STARTED",
+    "ts": "2026-11-13T16:34:40.010Z",
+    "detail": { "department": "zoning" }
+  },
+  {
+    "event_id": "evt-rej-003",
+    "trace_id": "trc-rej-002",
+    "permit_id": "pm-fixture-rejected-fire-002",
+    "span": "dept:fire",
+    "parent_span": "orchestrator",
+    "type": "SPAN_STARTED",
+    "ts": "2026-11-13T16:34:40.012Z",
+    "detail": { "department": "fire" }
+  },
+  {
+    "event_id": "evt-rej-004",
+    "trace_id": "trc-rej-002",
+    "permit_id": "pm-fixture-rejected-fire-002",
+    "span": "dept:water",
+    "parent_span": "orchestrator",
+    "type": "SPAN_STARTED",
+    "ts": "2026-11-13T16:34:40.015Z",
+    "detail": { "department": "water" }
+  },
+  {
+    "event_id": "evt-rej-005",
+    "trace_id": "trc-rej-002",
+    "permit_id": "pm-fixture-rejected-fire-002",
+    "span": "dept:structural",
+    "parent_span": "orchestrator",
+    "type": "SPAN_STARTED",
+    "ts": "2026-11-13T16:34:40.018Z",
+    "detail": { "department": "structural" }
+  },
+  {
+    "event_id": "evt-rej-006",
+    "trace_id": "trc-rej-002",
+    "permit_id": "pm-fixture-rejected-fire-002",
+    "span": "dept:zoning",
+    "parent_span": "orchestrator",
+    "type": "CALL_DISPATCHED",
+    "ts": "2026-11-13T16:34:40.020Z",
+    "detail": { "attempt": 1, "endpoint": "http://zoning:8001/evaluate" }
+  },
+  {
+    "event_id": "evt-rej-007",
+    "trace_id": "trc-rej-002",
+    "permit_id": "pm-fixture-rejected-fire-002",
+    "span": "dept:fire",
+    "parent_span": "orchestrator",
+    "type": "CALL_DISPATCHED",
+    "ts": "2026-11-13T16:34:40.022Z",
+    "detail": { "attempt": 1, "endpoint": "http://fire:8002/evaluate" }
+  },
+  {
+    "event_id": "evt-rej-008",
+    "trace_id": "trc-rej-002",
+    "permit_id": "pm-fixture-rejected-fire-002",
+    "span": "dept:water",
+    "parent_span": "orchestrator",
+    "type": "CALL_DISPATCHED",
+    "ts": "2026-11-13T16:34:40.024Z",
+    "detail": { "attempt": 1, "endpoint": "http://water:8003/evaluate" }
+  },
+  {
+    "event_id": "evt-rej-009",
+    "trace_id": "trc-rej-002",
+    "permit_id": "pm-fixture-rejected-fire-002",
+    "span": "dept:structural",
+    "parent_span": "orchestrator",
+    "type": "CALL_DISPATCHED",
+    "ts": "2026-11-13T16:34:40.026Z",
+    "detail": { "attempt": 1, "endpoint": "http://structural:8004/evaluate" }
+  },
+  {
+    "event_id": "evt-rej-010",
+    "trace_id": "trc-rej-002",
+    "permit_id": "pm-fixture-rejected-fire-002",
+    "span": "dept:water",
+    "parent_span": "orchestrator",
+    "type": "CALL_SUCCEEDED",
+    "ts": "2026-11-13T16:34:40.160Z",
+    "detail": { "status": "APPROVED", "attempt": 1, "latency_ms": 136 }
+  },
+  {
+    "event_id": "evt-rej-011",
+    "trace_id": "trc-rej-002",
+    "permit_id": "pm-fixture-rejected-fire-002",
+    "span": "dept:water",
+    "parent_span": "orchestrator",
+    "type": "SPAN_COMPLETED",
+    "ts": "2026-11-13T16:34:40.165Z",
+    "detail": { "status": "APPROVED", "duration_ms": 150 }
+  },
+  {
+    "event_id": "evt-rej-012",
+    "trace_id": "trc-rej-002",
+    "permit_id": "pm-fixture-rejected-fire-002",
+    "span": "dept:fire",
+    "parent_span": "orchestrator",
+    "type": "CALL_SUCCEEDED",
+    "ts": "2026-11-13T16:34:40.210Z",
+    "detail": {
+      "status": "REJECTED",
+      "attempt": 1,
+      "latency_ms": 188,
+      "violations": [
+        {
+          "department": "fire",
+          "rule_id": "FIRE-001",
+          "message": "Automatic sprinkler system required for assembly occupancy over 100 occupants."
+        },
+        {
+          "department": "fire",
+          "rule_id": "FIRE-002",
+          "message": "Minimum 2 egress exits required for occupant load 110 (1 provided)."
+        }
+      ]
+    }
+  },
+  {
+    "event_id": "evt-rej-013",
+    "trace_id": "trc-rej-002",
+    "permit_id": "pm-fixture-rejected-fire-002",
+    "span": "dept:fire",
+    "parent_span": "orchestrator",
+    "type": "SPAN_COMPLETED",
+    "ts": "2026-11-13T16:34:40.215Z",
+    "detail": { "status": "REJECTED", "duration_ms": 203 }
+  },
+  {
+    "event_id": "evt-rej-014",
+    "trace_id": "trc-rej-002",
+    "permit_id": "pm-fixture-rejected-fire-002",
+    "span": "dept:zoning",
+    "parent_span": "orchestrator",
+    "type": "CALL_SUCCEEDED",
+    "ts": "2026-11-13T16:34:40.240Z",
+    "detail": { "status": "APPROVED", "attempt": 1, "latency_ms": 220 }
+  },
+  {
+    "event_id": "evt-rej-015",
+    "trace_id": "trc-rej-002",
+    "permit_id": "pm-fixture-rejected-fire-002",
+    "span": "dept:zoning",
+    "parent_span": "orchestrator",
+    "type": "SPAN_COMPLETED",
+    "ts": "2026-11-13T16:34:40.245Z",
+    "detail": { "status": "APPROVED", "duration_ms": 235 }
+  },
+  {
+    "event_id": "evt-rej-016",
+    "trace_id": "trc-rej-002",
+    "permit_id": "pm-fixture-rejected-fire-002",
+    "span": "dept:structural",
+    "parent_span": "orchestrator",
+    "type": "CALL_SUCCEEDED",
+    "ts": "2026-11-13T16:34:40.260Z",
+    "detail": { "status": "APPROVED", "attempt": 1, "latency_ms": 234 }
+  },
+  {
+    "event_id": "evt-rej-017",
+    "trace_id": "trc-rej-002",
+    "permit_id": "pm-fixture-rejected-fire-002",
+    "span": "dept:structural",
+    "parent_span": "orchestrator",
+    "type": "SPAN_COMPLETED",
+    "ts": "2026-11-13T16:34:40.265Z",
+    "detail": { "status": "APPROVED", "duration_ms": 247 }
+  },
+  {
+    "event_id": "evt-rej-018",
+    "trace_id": "trc-rej-002",
+    "permit_id": "pm-fixture-rejected-fire-002",
+    "span": "consensus",
+    "parent_span": "orchestrator",
+    "type": "CONSENSUS_STARTED",
+    "ts": "2026-11-13T16:34:40.270Z",
+    "detail": { "departments_responded": 4, "approvals": 3, "rejections": 1, "failures": 0 }
+  },
+  {
+    "event_id": "evt-rej-019",
+    "trace_id": "trc-rej-002",
+    "permit_id": "pm-fixture-rejected-fire-002",
+    "span": "consensus",
+    "parent_span": "orchestrator",
+    "type": "SPAN_COMPLETED",
+    "ts": "2026-11-13T16:34:40.275Z",
+    "detail": { "status": "REJECTED", "decision": "REJECTED", "duration_ms": 5 }
+  },
+  {
+    "event_id": "evt-rej-020",
+    "trace_id": "trc-rej-002",
+    "permit_id": "pm-fixture-rejected-fire-002",
+    "span": "orchestrator",
+    "parent_span": null,
+    "type": "PERMIT_DECIDED",
+    "ts": "2026-11-13T16:34:40.280Z",
+    "detail": {
+      "state": "DECIDED",
+      "final_decision": "REJECTED",
+      "decision_code": "DEPARTMENT_REJECTIONS",
+      "decision_summary": "Application rejected due to violations in 1 department: Fire.",
+      "violations": [
+        {
+          "department": "fire",
+          "rule_id": "FIRE-001",
+          "message": "Automatic sprinkler system required for assembly occupancy over 100 occupants."
+        },
+        {
+          "department": "fire",
+          "rule_id": "FIRE-002",
+          "message": "Minimum 2 egress exits required for occupant load 110 (1 provided)."
+        }
+      ],
+      "total_duration_ms": 280
+    }
+  }
+]

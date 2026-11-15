@@ -1,0 +1,47 @@
+{
+  "permit_id": "pm-fixture-approved-001",
+  "project_title": "Single Family Residential Rear Addition",
+  "project_description": "Ground floor bedroom and bathroom expansion adhering to standard setbacks and utility connections.",
+  "estimated_cost_usd": 85000,
+  "property_address": {
+    "street": "1428 Elm Street",
+    "city": "Springfield",
+    "state": "CA",
+    "zip": "94016"
+  },
+  "applicant": {
+    "name": "Alex Rivera",
+    "role": "licensed_contractor",
+    "email": "alex.rivera@buildsmart.example.com",
+    "phone": "+1-555-019-2834"
+  },
+  "zoning": {
+    "zone_code": "R-1",
+    "building_height_ft": 24.5,
+    "lot_area_sqft": 7500,
+    "building_footprint_sqft": 2600,
+    "setback_front_ft": 25.0,
+    "setback_rear_ft": 20.0,
+    "setback_side_ft": 8.0
+  },
+  "fire": {
+    "occupancy_type": "residential",
+    "occupant_load": 6,
+    "has_sprinkler_system": false,
+    "egress_exits_count": 2,
+    "distance_to_hydrant_ft": 180,
+    "has_fire_alarm": true
+  },
+  "water": {
+    "water_meter_size_inches": 1.0,
+    "daily_water_usage_gpd": 320,
+    "has_backflow_preventer": true,
+    "has_stormwater_plan": true
+  },
+  "structural": {
+    "stories_count": 2,
+    "construction_type": "wood_frame",
+    "seismic_design_category": "C",
+    "foundation_type": "continuous_spread_footing"
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "permit_id": "pm-fixture-timeout-offline-003",
+  "project_title": "Suburban Storage Warehouse Modernization",
+  "project_description": "Structural reinforcement and modern racking installation. Used to trigger and verify department offline timeout and retry handling.",
+  "estimated_cost_usd": 140000,
+  "property_address": {
+    "street": "88 Industrial Way",
+    "city": "Springfield",
+    "state": "CA",
+    "zip": "94016"
+  },
+  "applicant": {
+    "name": "Morgan Davis",
+    "role": "engineer",
+    "email": "m.davis@norcalengineering.example.com",
+    "phone": "+1-555-014-7731"
+  },
+  "zoning": {
+    "zone_code": "M-1",
+    "building_height_ft": 36.0,
+    "lot_area_sqft": 45000,
+    "building_footprint_sqft": 18000,
+    "setback_front_ft": 35.0,
+    "setback_rear_ft": 25.0,
+    "setback_side_ft": 20.0
+  },
+  "fire": {
+    "occupancy_type": "industrial",
+    "occupant_load": 25,
+    "has_sprinkler_system": true,
+    "egress_exits_count": 4,
+    "distance_to_hydrant_ft": 120,
+    "has_fire_alarm": true
+  },
+  "water": {
+    "water_meter_size_inches": 2.0,
+    "daily_water_usage_gpd": 600,
+    "has_backflow_preventer": true,
+    "has_stormwater_plan": true
+  },
+  "structural": {
+    "stories_count": 1,
+    "construction_type": "light_steel",
+    "seismic_design_category": "C",
+    "foundation_type": "slab_on_grade"
+  }
+}
