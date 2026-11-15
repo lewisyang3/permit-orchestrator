@@ -14,6 +14,8 @@ export async function checkBackendHealth(): Promise<boolean> {
   try {
     const res = await fetch(`${BASE_URL}/health`);
     if (!res.ok) return false;
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) return false;
     const data = await res.json();
     return data.status === 'healthy';
   } catch {
@@ -45,17 +47,15 @@ export async function setDepartmentFault(req: FaultControlRequest): Promise<Faul
 
 export async function restoreAllDepartmentsHealthy(): Promise<Record<DepartmentName, FaultControlResponse>> {
   const departments: DepartmentName[] = ['zoning', 'fire', 'water', 'structural'];
+  const responses = await Promise.all(
+    departments.map((dept) =>
+      setDepartmentFault({ department: dept, mode: 'none', delay_ms: 0 })
+    )
+  );
   const results: Partial<Record<DepartmentName, FaultControlResponse>> = {};
-
-  for (const dept of departments) {
-    const res = await setDepartmentFault({
-      department: dept,
-      mode: 'none',
-      delay_ms: 0,
-    });
-    results[dept] = res;
-  }
-
+  departments.forEach((dept, idx) => {
+    results[dept] = responses[idx];
+  });
   return results as Record<DepartmentName, FaultControlResponse>;
 }
 
