@@ -38,7 +38,7 @@ from contract.models import (
 )
 from orchestrator.consensus import evaluate_consensus
 from orchestrator.dispatcher import get_default_endpoints, resolve_endpoint_url
-from orchestrator.handlers import admin_router, submit_router
+from orchestrator.handlers import admin_router, intake_router, submit_router
 
 
 class OrchestratorApp:
@@ -311,6 +311,7 @@ def create_app(
 
     app.include_router(admin_router)
     app.include_router(submit_router)
+    app.include_router(intake_router)
 
     @app.get("/health")
     async def health():
