@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from contract.models import ConstructionType, OccupancyType, Permit, ZoneCode
 from orchestrator.app import create_app
 from orchestrator.handlers.intake import (
+    MissingFieldsError,
     deterministic_plan_parse,
     parse_plan_document,
 )
@@ -36,6 +37,14 @@ def sample_pdf_bytes():
     if pdf_path.exists():
         return pdf_path.read_bytes()
     return b"%PDF-1.4\n%trailer\n%%EOF"
+
+
+@pytest.fixture
+def incomplete_pdf_bytes():
+    pdf_path = Path("fixtures/sample_plans/incomplete_plan.pdf")
+    if pdf_path.exists():
+        return pdf_path.read_bytes()
+    return b"%PDF-1.4\n1 0 obj\n(Project Title: Minimal) Tj\nendobj\n%%EOF"
 
 
 @pytest.fixture
@@ -80,6 +89,27 @@ def test_deterministic_pdf_plan_parsing(sample_pdf_bytes):
     assert "Residential Rear Addition" in permit.project_title
     assert permit.zoning.zone_code == ZoneCode.R1
     assert permit.fire.occupancy_type == OccupancyType.RESIDENTIAL
+
+
+def test_deterministic_parsing_raises_missing_fields_on_incomplete_plan():
+    """Test that missing mandatory fields raise MissingFieldsError."""
+    incomplete_text = """
+    Project Title: Incomplete Porch
+    Property Location:
+    Address: 123 Main St
+    """
+    with pytest.raises(MissingFieldsError) as exc_info:
+        deterministic_plan_parse(
+            content_text=incomplete_text,
+            filename="incomplete.txt",
+        )
+
+    err = exc_info.value
+    assert "applicant.name" in err.missing_fields
+    assert "applicant.email" in err.missing_fields
+    assert "zoning.zone_code" in err.missing_fields
+    assert "fire.occupancy_type" in err.missing_fields
+    assert "structural.construction_type" in err.missing_fields
 
 
 @pytest.mark.anyio
@@ -178,7 +208,7 @@ async def test_gemini_multimodal_extraction_mock(sample_pdf_bytes):
                 save_upload=False,
             )
 
-            assert extracted_by == "gemini-2.5-flash"
+            assert "flash" in extracted_by
             assert permit.project_title == "Commercial Restaurant Expansion"
             assert permit.zoning.zone_code == ZoneCode.C1
             assert permit.structural.construction_type == ConstructionType.LIGHT_STEEL
@@ -186,18 +216,72 @@ async def test_gemini_multimodal_extraction_mock(sample_pdf_bytes):
 
 
 @pytest.mark.anyio
-async def test_gemini_failure_falls_back_to_deterministic():
-    """Test that if Gemini call fails or times out, it gracefully falls back with warning."""
+async def test_gemini_missing_fields_raises_error():
+    """Test that if Gemini response is missing required fields, MissingFieldsError is raised."""
+    mock_gemini_payload = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {
+                            "text": """{
+                                "project_title": "Incomplete Restaurant",
+                                "property_address": {
+                                    "street": "123 Market St",
+                                    "city": "San Francisco",
+                                    "state": "CA",
+                                    "zip": "94103"
+                                },
+                                "applicant": {
+                                    "name": "Alice Builder",
+                                    "role": null,
+                                    "email": null
+                                },
+                                "zoning": null,
+                                "fire": null,
+                                "water": null,
+                                "structural": null,
+                                "missing_fields": ["applicant.role", "applicant.email", "zoning", "fire", "water", "structural"]
+                            }"""
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+
+    with patch.dict("os.environ", {"GEMINI_API_KEY": "test-key-12345"}):
+        with patch("httpx.AsyncClient.post") as mock_post:
+            mock_resp = AsyncMock(spec=httpx.Response)
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = mock_gemini_payload
+            mock_post.return_value = mock_resp
+
+            with pytest.raises(MissingFieldsError) as exc_info:
+                await parse_plan_document(
+                    filename="incomplete.pdf",
+                    content_base64="dummy-b64",
+                    mime_type="application/pdf",
+                    save_upload=False,
+                )
+
+            assert "applicant.role" in exc_info.value.missing_fields
+            assert "zoning.zone_code" in exc_info.value.missing_fields
+
+
+@pytest.mark.anyio
+async def test_gemini_failure_falls_back_to_deterministic(sample_plan_text):
+    """Test that if Gemini call fails or times out, it gracefully falls back to deterministic parser."""
     with patch.dict("os.environ", {"GEMINI_API_KEY": "test-key-12345"}):
         with patch("httpx.AsyncClient.post", side_effect=httpx.TimeoutException("Read timeout")):
             permit, extracted_by, warnings, _ = await parse_plan_document(
                 filename="warehouse_plan.txt",
-                content_text="Project Title: Fallback Test Plan\nZone District: M-1\nAddress: 100 Main St\nCity: Test\nState: CA\nZip: 90001",
+                content_text=sample_plan_text,
                 save_upload=False,
             )
 
             assert extracted_by == "deterministic_fallback"
-            assert permit.project_title == "Fallback Test Plan"
+            assert permit.project_title == "Single Family Residential Rear Addition"
             assert any("Gemini API extraction failed" in w for w in warnings)
 
 
@@ -214,7 +298,7 @@ def test_intake_parse_endpoint_with_text(app_client, sample_plan_text):
     assert res.status_code == 200
     data = res.json()
     assert data["filename"] == "residential_addition.txt"
-    assert data["extracted_by"] in ("deterministic_fallback", "gemini-2.5-flash")
+    assert "flash" in data["extracted_by"] or data["extracted_by"] == "deterministic_fallback"
     assert data["permit"]["project_title"] == "Single Family Residential Rear Addition"
     assert data["permit"]["zoning"]["zone_code"] == "R-1"
 
@@ -237,6 +321,31 @@ def test_intake_parse_endpoint_with_base64_pdf(app_client, sample_pdf_bytes):
     assert data["permit"]["permit_id"].startswith("pm-intake-")
 
 
+def test_intake_parse_endpoint_missing_fields_returns_422(app_client):
+    """Test POST /intake/parse returns 422 when plan document is missing required fields."""
+    incomplete_content = """
+    Project Title: Incomplete Storage Shed Addition
+    Property Location:
+    Address: 100 Main St, Springfield, OR 97477
+    Zoning Parameters:
+    Zone District: R-1
+    """
+    res = app_client.post(
+        "/intake/parse",
+        json={
+            "filename": "incomplete_plan.txt",
+            "content_text": incomplete_content,
+            "mime_type": "text/plain",
+        },
+    )
+    assert res.status_code == 422
+    err_body = res.json()["detail"]
+    assert err_body["error"] == "MISSING_REQUIRED_FIELDS"
+    assert "applicant.name" in err_body["missing_fields"]
+    assert "applicant.email" in err_body["missing_fields"]
+    assert "zoning.setback_rear_ft" in err_body["missing_fields"]
+
+
 def test_intake_parse_endpoint_rejects_empty_payload(app_client):
     """Test POST /intake/parse rejects request without text or base64."""
     res = app_client.post(
@@ -249,7 +358,6 @@ def test_intake_parse_endpoint_rejects_empty_payload(app_client):
 
 def test_sample_plans_endpoints(app_client):
     """Test GET /intake/sample-plans and GET /intake/sample-plans/{id}."""
-    # List sample plans
     res = app_client.get("/intake/sample-plans")
     assert res.status_code == 200
     plans = res.json()
@@ -258,13 +366,11 @@ def test_sample_plans_endpoints(app_client):
     assert "residential_addition" in plan_ids
     assert "commercial_restaurant" in plan_ids
 
-    # Get single sample plan
     res_single = app_client.get("/intake/sample-plans/residential_addition")
     assert res_single.status_code == 200
     detail = res_single.json()
     assert detail["id"] == "residential_addition"
     assert "Homer Simpson" in detail["sample_text"]
 
-    # Non-existent sample plan
     res_404 = app_client.get("/intake/sample-plans/non_existent_plan")
     assert res_404.status_code == 404

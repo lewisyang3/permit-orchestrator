@@ -3,7 +3,11 @@
 COMPOSE := docker compose
 SERVICE ?=
 
-.PHONY: help config build up down stop start restart rebuild ps logs shell
+.PHONY: setup help config build up down stop start restart rebuild ps logs shell
+
+setup:
+	uv sync
+	test -f .env || cp .env.example .env
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
