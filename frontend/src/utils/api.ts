@@ -13,6 +13,11 @@ import {
 
 const BASE_URL = '';
 
+/** URL of an uploaded plan, for showing cited evidence. */
+export function documentUrl(documentId: string): string {
+  return `${BASE_URL}/intake/documents/${encodeURIComponent(documentId)}`;
+}
+
 export async function checkBackendHealth(): Promise<boolean> {
   try {
     const res = await fetch(`${BASE_URL}/health`);
