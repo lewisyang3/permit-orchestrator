@@ -204,6 +204,56 @@ describe('Intake Plan & PDF Parsing Component (Task T13)', () => {
     });
   });
 
+  it('displays clean categorized error message when plan parsing rejects missing fields', async () => {
+    vi.spyOn(api, 'fetchSamplePlans').mockResolvedValue([]);
+    const errPayload = JSON.stringify({
+      detail: {
+        error: 'MISSING_REQUIRED_FIELDS',
+        message: 'Plan parsing failed. Missing required fields: applicant.email, fire.occupancy_type',
+        missing_fields: ['applicant.email', 'fire.occupancy_type'],
+      },
+    });
+    vi.spyOn(api, 'parseIntakePlan').mockRejectedValue(
+      new Error(`Plan parsing failed (422): ${errPayload}`)
+    );
+
+    const { container } = render(
+      <PermitForm
+        permit={samplePermit}
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        isSubmitting={false}
+        mode="live"
+      />
+    );
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const dummyTxt = new File(['incomplete plan text'], 'incomplete.txt', { type: 'text/plain' });
+
+    const originalFileReader = globalThis.FileReader;
+    class MockFileReader {
+      onload: any = null;
+      result: any = 'incomplete plan text';
+      readAsText() {
+        setTimeout(() => this.onload && this.onload(), 10);
+      }
+    }
+    globalThis.FileReader = MockFileReader as any;
+
+    fireEvent.change(fileInput, { target: { files: [dummyTxt] } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Plan Incomplete: Missing Required Fields')).toBeInTheDocument();
+      expect(screen.getByText('2 missing')).toBeInTheDocument();
+      expect(screen.getByText('Applicant')).toBeInTheDocument();
+      expect(screen.getByText('Email Address')).toBeInTheDocument();
+      expect(screen.getByText('Fire Life Safety')).toBeInTheDocument();
+      expect(screen.getByText('Occupancy Type')).toBeInTheDocument();
+    });
+
+    globalThis.FileReader = originalFileReader;
+  });
+
   it('falls back to built-in sample permit when backend returns 404', async () => {
     vi.spyOn(api, 'fetchSamplePlans').mockResolvedValue([
       {
