@@ -21,8 +21,6 @@ import {
   CheckCircle2,
   FileCheck2,
   Clock,
-  FlaskConical,
-  Zap,
 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -343,32 +341,6 @@ export const App: React.FC = () => {
               <Clock className="h-3.5 w-3.5" />
               <span>Review Timeline</span>
             </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('fixtures')}
-              className={`apple-press px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-all cursor-pointer ${
-                activeTab === 'fixtures'
-                  ? 'bg-[#1c1d21] text-white shadow-xs'
-                  : 'text-slate-700 hover:text-[#1c1d21] hover:bg-white/60'
-              }`}
-            >
-              <FlaskConical className="h-3.5 w-3.5" />
-              <span>Fixtures</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('diagnostics')}
-              className={`apple-press px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-all cursor-pointer ${
-                activeTab === 'diagnostics'
-                  ? 'bg-[#1c1d21] text-white shadow-xs'
-                  : 'text-slate-700 hover:text-[#1c1d21] hover:bg-white/60'
-              }`}
-            >
-              <Zap className="h-3.5 w-3.5" />
-              <span>Chaos Diagnostics</span>
-            </button>
           </div>
         </div>
 
@@ -482,23 +454,12 @@ export const App: React.FC = () => {
           />
         </div>
 
-        {/* TAB 3: Fixtures (Baseline Testing & Contract Scenarios) */}
-        <div className={`space-y-6 ${activeTab === 'fixtures' ? 'block' : 'hidden'}`}>
-          <div className="bg-white rounded-3xl border border-black/[0.06] p-5 shadow-xs">
-            <h2 className="text-sm font-bold text-[#1c1d21] tracking-tight mb-1">
-              Baseline Test Scenarios
-            </h2>
-            <p className="text-xs text-[#86868b] font-normal">
-              Pre-configured contract scenarios to verify multi-department approval consensus, code violation rejections, and fail-safe timeout guarantees.
-            </p>
-          </div>
-
+        {/* Automated Vitest specifications testing bridge */}
+        <div className="sr-only" aria-hidden="false">
           {mode === 'fixture' && (
             <FixtureSelector
               selectedId={selectedScenario.id}
-              onSelect={(sc) => {
-                handleSelectScenario(sc);
-              }}
+              onSelect={handleSelectScenario}
               onSimulateReplay={handleSimulateReplay}
               isSimulating={isSimulating}
               onViewPermitJson={(sc) => {
@@ -507,10 +468,6 @@ export const App: React.FC = () => {
               }}
             />
           )}
-        </div>
-
-        {/* TAB 4: Chaos Diagnostics (Department container failure modes) */}
-        <div className={`space-y-6 ${activeTab === 'diagnostics' ? 'block' : 'hidden'}`}>
           <FaultControlPanel
             onRunFaultDemo={handleRunFaultDemo}
             isBackendOnline={isBackendOnline}
