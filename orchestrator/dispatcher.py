@@ -79,6 +79,11 @@ def get_default_endpoints(overrides: Optional[Dict[str, str]] = None) -> Dict[st
 
 
 
+def finding_dicts(department: str, reasons: Sequence[EvaluationReason]) -> List[Dict[str, Any]]:
+    """Department reasons as trace-event dicts, keeping each one's plan evidence and rule sources."""
+    return [{"department": department, **r.model_dump(mode="json")} for r in reasons]
+
+
 def _describe_client_error(response: httpx.Response) -> Tuple[str, List[EvaluationReason]]:
     """Summarize a department 4xx, keeping its structured code, message and reasons.
 
@@ -327,6 +332,7 @@ async def dispatch_department(
                         "attempts_total": attempt,
                         "final_status": DepartmentStatus.ERROR.value,
                         "error": _describe_client_error(response)[0],
+                        "findings": finding_dicts(dept_name, _describe_client_error(response)[1]),
                     },
                 )
                 await _emit_trace_event(
@@ -370,6 +376,7 @@ async def dispatch_department(
                                 "attempt": attempt,
                                 "latency_ms": round(call_duration_ms, 2),
                                 "jurisdiction_id": eval_resp.jurisdiction_id,
+                                "findings": finding_dicts(dept_name, eval_resp.reasons),
                             },
                         )
                         await _emit_trace_event(
