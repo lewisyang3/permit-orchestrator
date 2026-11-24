@@ -5,6 +5,7 @@ import {
   FinalDecision,
   DecisionCode,
   PermitViolation,
+  DepartmentFinding,
 } from '../types';
 import { getDepartmentLabel } from './formatters';
 
@@ -32,6 +33,10 @@ export interface ParsedSpan {
   attempts: SpanAttempt[];
   events: TraceEvent[];
   violations: PermitViolation[];
+  /** Every reason the department returned, with plan evidence and rule sources. */
+  findings: DepartmentFinding[];
+  /** City rule pack the department used, e.g. "ca-san-jose". */
+  jurisdictionId?: string;
   error?: string;
   rulesEvaluated?: number;
 }
@@ -143,6 +148,8 @@ export function parseTraceEvents(events: TraceEvent[]): ParsedTrace {
 
     let status: ParsedSpan['status'] = 'PENDING';
     const violations: PermitViolation[] = [];
+    const findings: DepartmentFinding[] = [];
+    let jurisdictionId: string | undefined;
     let rulesEvaluated: number | undefined;
     let error: string | undefined;
 
@@ -212,6 +219,9 @@ export function parseTraceEvents(events: TraceEvent[]): ParsedTrace {
         if (evt.detail?.rules_evaluated !== undefined) {
           rulesEvaluated = evt.detail.rules_evaluated;
         }
+        if (evt.detail?.jurisdiction_id) {
+          jurisdictionId = evt.detail.jurisdiction_id;
+        }
         if (Array.isArray(evt.detail?.violations)) {
           for (const v of evt.detail.violations) {
             if (typeof v === 'string') {
@@ -221,6 +231,10 @@ export function parseTraceEvents(events: TraceEvent[]): ParsedTrace {
             }
           }
         }
+      }
+
+      if ((evt.type === 'CALL_SUCCEEDED' || evt.type === 'CALL_FAILED') && Array.isArray(evt.detail?.findings)) {
+        findings.splice(0, findings.length, ...(evt.detail.findings as DepartmentFinding[]));
       }
 
       if (evt.type === 'CALL_FAILED') {
@@ -263,6 +277,8 @@ export function parseTraceEvents(events: TraceEvent[]): ParsedTrace {
       attempts: attemptsList,
       events: spanEvts,
       violations,
+      findings,
+      jurisdictionId,
       error,
       rulesEvaluated,
     });

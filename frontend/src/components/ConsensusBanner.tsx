@@ -12,6 +12,7 @@ import {
   Building,
   ArrowRight,
 } from 'lucide-react';
+import { FindingEvidence } from './FindingEvidence';
 
 export interface ConsensusBannerProps {
   trace: ParsedTrace;
@@ -159,7 +160,10 @@ export const ConsensusBanner: React.FC<ConsensusBannerProps> = ({ trace, onViewT
                 <span className="font-mono text-slate-500 text-[11px] font-semibold shrink-0">
                   {v.rule_id}:
                 </span>
-                <span className="text-slate-700 font-medium">{v.message}</span>
+                <div className="min-w-0">
+                  <span className="text-slate-700 font-medium">{v.message}</span>
+                  <FindingEvidence evidence={v.evidence} ruleSources={v.rule_sources} />
+                </div>
               </div>
             ))}
           </div>

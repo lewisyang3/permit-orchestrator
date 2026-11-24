@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Permit, SamplePlanInfo, IntakeParseResponse } from '../types';
 import { parseIntakePlan, fetchSamplePlans, fetchSamplePlan } from '../utils/api';
 import { FIXTURE_SCENARIOS } from '../fixtures';
+import { EvidenceChip } from './EvidenceChip';
+import { summarizeEvidence } from '../utils/evidence';
 import {
   FileText,
   MapPin,
@@ -45,6 +47,8 @@ export const PermitForm: React.FC<PermitFormProps> = ({
   const [intakeError, setIntakeError] = useState<string | null>(null);
   const [samplePlans, setSamplePlans] = useState<SamplePlanInfo[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const ev = (path: string) => <EvidenceChip span={permit.evidence?.[path]} />;
+  const evidenceSummary = summarizeEvidence(permit);
 
   // Load sample plan catalog on mount
   useEffect(() => {
@@ -273,6 +277,20 @@ export const PermitForm: React.FC<PermitFormProps> = ({
               <p className="text-slate-700 mt-1 font-normal">
                 Extracted all parameters for Zoning, Fire, Water, and Structural reviews into the permit payload.
               </p>
+              {evidenceSummary && (
+                <p className="mt-1 text-[11px] text-slate-700" data-testid="evidence-summary">
+                  <span className="font-semibold text-emerald-800">
+                    {evidenceSummary.verified} of {evidenceSummary.total} values found in the document.
+                  </span>
+                  {evidenceSummary.unverified > 0 && (
+                    <span className="text-amber-800"> {evidenceSummary.unverified} not found; check by hand.</span>
+                  )}
+                  {evidenceSummary.mismatch > 0 && (
+                    <span className="text-rose-800"> {evidenceSummary.mismatch} cite text that doesn't state the value.</span>
+                  )}{' '}
+                  Click a page badge to see the source.
+                </p>
+              )}
               {intakeResult.warnings && intakeResult.warnings.length > 0 && (
                 <div className="mt-1 text-[11px] text-amber-800 font-medium">
                   Note: {intakeResult.warnings.join('; ')}
@@ -316,10 +334,17 @@ export const PermitForm: React.FC<PermitFormProps> = ({
                 <MapPin className="h-4 w-4 text-[#0071e3]" />
                 <span>Property &amp; Title</span>
               </div>
-              <p className="text-[#1d1d1f] font-bold text-sm mb-1">{permit.project_title}</p>
+              <p className="text-[#1d1d1f] font-bold text-sm mb-1">
+                {permit.project_title}
+                {ev('project_title')}
+              </p>
               <p className="text-slate-600">
-                {permit.property_address?.street}, {permit.property_address?.city},{' '}
-                {permit.property_address?.state} {permit.property_address?.zip}
+                {permit.property_address?.street}
+                {ev('property_address.street')}, {permit.property_address?.city}
+                {ev('property_address.city')},{' '}
+                {permit.property_address?.state}
+                {ev('property_address.state')} {permit.property_address?.zip}
+                {ev('property_address.zip')}
               </p>
               {permit.estimated_cost_usd && (
                 <p className="text-slate-600 mt-1">
@@ -327,6 +352,7 @@ export const PermitForm: React.FC<PermitFormProps> = ({
                   <span className="text-emerald-700 font-mono font-bold">
                     ${permit.estimated_cost_usd.toLocaleString()}
                   </span>
+                  {ev('estimated_cost_usd')}
                 </p>
               )}
             </div>
@@ -336,11 +362,18 @@ export const PermitForm: React.FC<PermitFormProps> = ({
                 <User className="h-4 w-4 text-[#0071e3]" />
                 <span>Applicant Information</span>
               </div>
-              <p className="text-[#1d1d1f] font-bold text-sm mb-1">{permit.applicant?.name}</p>
+              <p className="text-[#1d1d1f] font-bold text-sm mb-1">
+                {permit.applicant?.name}
+                {ev('applicant.name')}
+              </p>
               <p className="text-slate-600">
                 Role: <span className="text-slate-800 font-medium capitalize">{permit.applicant?.role}</span>
+                {ev('applicant.role')}
               </p>
-              <p className="text-slate-600">Email: {permit.applicant?.email}</p>
+              <p className="text-slate-600">
+                Email: {permit.applicant?.email}
+                {ev('applicant.email')}
+              </p>
             </div>
           </div>
 
@@ -355,17 +388,35 @@ export const PermitForm: React.FC<PermitFormProps> = ({
               <div className="space-y-1.5 text-slate-600">
                 <div>
                   Zone: <span className="text-[#1d1d1f] font-mono font-bold">{permit.zoning?.zone_code}</span>
+                  {ev('zoning.zone_code')}
                 </div>
                 <div>
                   Height: <span className="text-[#1d1d1f] font-medium">{permit.zoning?.building_height_ft} ft</span>
+                  {ev('zoning.building_height_ft')}
+                </div>
+                <div>
+                  Lot Area: <span className="text-[#1d1d1f] font-medium">{permit.zoning?.lot_area_sqft} sqft</span>
+                  {ev('zoning.lot_area_sqft')}
                 </div>
                 <div>
                   Footprint:{' '}
                   <span className="text-[#1d1d1f] font-medium">{permit.zoning?.building_footprint_sqft} sqft</span>
+                  {ev('zoning.building_footprint_sqft')}
+                </div>
+                <div>
+                  Front Setback:{' '}
+                  <span className="text-[#1d1d1f] font-medium">{permit.zoning?.setback_front_ft} ft</span>
+                  {ev('zoning.setback_front_ft')}
                 </div>
                 <div>
                   Rear Setback:{' '}
                   <span className="text-[#1d1d1f] font-medium">{permit.zoning?.setback_rear_ft} ft</span>
+                  {ev('zoning.setback_rear_ft')}
+                </div>
+                <div>
+                  Side Setback:{' '}
+                  <span className="text-[#1d1d1f] font-medium">{permit.zoning?.setback_side_ft} ft</span>
+                  {ev('zoning.setback_side_ft')}
                 </div>
               </div>
             </div>
@@ -380,9 +431,11 @@ export const PermitForm: React.FC<PermitFormProps> = ({
                 <div>
                   Occupancy:{' '}
                   <span className="text-[#1d1d1f] font-medium capitalize">{permit.fire?.occupancy_type}</span>
+                  {ev('fire.occupancy_type')}
                 </div>
                 <div>
                   Occupant Load: <span className="text-[#1d1d1f] font-medium">{permit.fire?.occupant_load}</span>
+                  {ev('fire.occupant_load')}
                 </div>
                 <div>
                   Sprinklers:{' '}
@@ -393,9 +446,11 @@ export const PermitForm: React.FC<PermitFormProps> = ({
                   >
                     {permit.fire?.has_sprinkler_system ? 'Yes' : 'No'}
                   </span>
+                  {ev('fire.has_sprinkler_system')}
                 </div>
                 <div>
                   Exits: <span className="text-[#1d1d1f] font-medium">{permit.fire?.egress_exits_count}</span>
+                  {ev('fire.egress_exits_count')}
                 </div>
               </div>
             </div>
@@ -410,10 +465,12 @@ export const PermitForm: React.FC<PermitFormProps> = ({
                 <div>
                   Meter:{' '}
                   <span className="text-[#1d1d1f] font-medium">{permit.water?.water_meter_size_inches} in</span>
+                  {ev('water.water_meter_size_inches')}
                 </div>
                 <div>
                   Daily Usage:{' '}
                   <span className="text-[#1d1d1f] font-medium">{permit.water?.daily_water_usage_gpd} GPD</span>
+                  {ev('water.daily_water_usage_gpd')}
                 </div>
                 <div>
                   Backflow Preventer:{' '}
@@ -424,6 +481,7 @@ export const PermitForm: React.FC<PermitFormProps> = ({
                   >
                     {permit.water?.has_backflow_preventer ? 'Yes' : 'No'}
                   </span>
+                  {ev('water.has_backflow_preventer')}
                 </div>
                 <div>
                   Stormwater Plan:{' '}
@@ -434,6 +492,7 @@ export const PermitForm: React.FC<PermitFormProps> = ({
                   >
                     {permit.water?.has_stormwater_plan ? 'Yes' : 'No'}
                   </span>
+                  {ev('water.has_stormwater_plan')}
                 </div>
               </div>
             </div>
@@ -447,24 +506,28 @@ export const PermitForm: React.FC<PermitFormProps> = ({
               <div className="space-y-1.5 text-slate-600">
                 <div>
                   Stories: <span className="text-[#1d1d1f] font-medium">{permit.structural?.stories_count}</span>
+                  {ev('structural.stories_count')}
                 </div>
                 <div>
                   Construction:{' '}
                   <span className="text-[#1d1d1f] font-medium capitalize">
                     {permit.structural?.construction_type?.replace('_', ' ')}
                   </span>
+                  {ev('structural.construction_type')}
                 </div>
                 <div>
                   Seismic Category:{' '}
                   <span className="text-[#1d1d1f] font-mono font-bold">
                     {permit.structural?.seismic_design_category}
                   </span>
+                  {ev('structural.seismic_design_category')}
                 </div>
                 <div>
                   Foundation:{' '}
                   <span className="text-[#1d1d1f] font-medium capitalize">
                     {permit.structural?.foundation_type?.replace('_', ' ')}
                   </span>
+                  {ev('structural.foundation_type')}
                 </div>
               </div>
             </div>
