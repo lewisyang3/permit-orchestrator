@@ -1,8 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Permit, SamplePlanInfo, IntakeParseResponse } from '../types';
 import { parseIntakePlan, fetchSamplePlans, fetchSamplePlan } from '../utils/api';
-import { FIXTURE_SCENARIOS } from '../fixtures';
-import { RESIDENTIAL_ADDITION_PERMIT } from '../fixtures/samplePermits';
+import {
+  RESIDENTIAL_ADDITION_PERMIT,
+  COMMERCIAL_RESTAURANT_PERMIT,
+  INDUSTRIAL_WAREHOUSE_PERMIT,
+} from '../fixtures/samplePermits';
 import { EvidenceChip } from './EvidenceChip';
 import { summarizeEvidence } from '../utils/evidence';
 import {
@@ -31,8 +34,8 @@ interface PermitFormProps {
 
 const FALLBACK_SAMPLE_PERMITS: Record<string, Permit> = {
   residential_addition: RESIDENTIAL_ADDITION_PERMIT,
-  commercial_restaurant: FIXTURE_SCENARIOS.rejected.permit,
-  industrial_warehouse: FIXTURE_SCENARIOS.timeout.permit,
+  commercial_restaurant: COMMERCIAL_RESTAURANT_PERMIT,
+  industrial_warehouse: INDUSTRIAL_WAREHOUSE_PERMIT,
 };
 
 export const PermitForm: React.FC<PermitFormProps> = ({

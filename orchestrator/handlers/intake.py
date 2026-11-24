@@ -20,7 +20,7 @@ from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, HTTPException, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import ValidationError
 
 from contract.normalize import normalize_state
@@ -1343,13 +1343,49 @@ def _media_type(path: Path) -> str:
     return "text/markdown; charset=utf-8" if suffix == ".md" else "text/plain; charset=utf-8"
 
 
+# Known sample document mappings so sample plans and fixtures can be inspected in the viewer
+_FIXTURES_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "sample_plans"
+_ALT_FIXTURES_DIR = Path("fixtures/sample_plans")
+
+SAMPLE_DOCUMENT_FILES: Dict[str, Tuple[str, str]] = {
+    "sample-residential-rear-addition": ("residential_rear_addition.pdf", "application/pdf"),
+    "residential_addition": ("residential_rear_addition.pdf", "application/pdf"),
+    "sample-residential_addition": ("residential_rear_addition.pdf", "application/pdf"),
+    "sample-commercial-restaurant": ("commercial_restaurant_patio.txt", "text/plain; charset=utf-8"),
+    "commercial_restaurant": ("commercial_restaurant_patio.txt", "text/plain; charset=utf-8"),
+    "sample-industrial-warehouse": ("warehouse_modernization.txt", "text/plain; charset=utf-8"),
+    "industrial_warehouse": ("warehouse_modernization.txt", "text/plain; charset=utf-8"),
+}
+
+
 @router.get(
     "/documents/{document_id}",
     summary="Download an uploaded plan so a reviewer can check its cited evidence",
     response_class=FileResponse,
 )
-async def get_intake_document(document_id: str) -> FileResponse:
+async def get_intake_document(document_id: str) -> Response:
     """Serve the saved upload for a permit's source_document_id."""
+    # Check if this document_id is one of our built-in sample plans or fixture documents
+    if document_id in SAMPLE_DOCUMENT_FILES:
+        rel_name, mime = SAMPLE_DOCUMENT_FILES[document_id]
+        for candidate_dir in (_FIXTURES_DIR, _ALT_FIXTURES_DIR):
+            cand_path = candidate_dir / rel_name
+            if cand_path.is_file():
+                return FileResponse(
+                    cand_path,
+                    media_type=mime,
+                    headers={"Content-Disposition": f'inline; filename="{rel_name}"'},
+                )
+        # Fallback to SAMPLE_PLANS text if file is not on disk
+        plan_key = document_id.replace("sample-", "").replace("-", "_")
+        if plan_key in SAMPLE_PLANS:
+            info = SAMPLE_PLANS[plan_key]
+            return Response(
+                content=info.sample_text,
+                media_type="text/plain; charset=utf-8",
+                headers={"Content-Disposition": f'inline; filename="{info.filename}"'},
+            )
+
     if not _DOCUMENT_ID.match(document_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     matches = sorted(UPLOADS_DIR.glob(f"{document_id}_*"))

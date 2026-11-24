@@ -20,6 +20,7 @@ RUN uv sync --locked --no-dev --no-install-project \
 COPY contract ./contract
 COPY orchestrator ./orchestrator
 COPY rules ./rules
+COPY fixtures ./fixtures
 COPY --from=frontend /frontend/dist ./frontend/dist
 USER appuser
 # Cloud Run injects PORT (default 8080); Compose and local runs fall back to 8000.

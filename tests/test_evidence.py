@@ -357,6 +357,24 @@ def test_unknown_or_malformed_document_ids_404(tmp_path, bad):
         assert client.get(f"/intake/documents/{bad}").status_code == 404
 
 
+@pytest.mark.parametrize(
+    "doc_id, expected_content_type, disposition_filename",
+    [
+        ("sample-residential-rear-addition", "application/pdf", "residential_rear_addition.pdf"),
+        ("residential_addition", "application/pdf", "residential_rear_addition.pdf"),
+        ("commercial_restaurant", "text/plain; charset=utf-8", "commercial_restaurant_patio.txt"),
+        ("industrial_warehouse", "text/plain; charset=utf-8", "warehouse_modernization.txt"),
+    ],
+)
+def test_sample_documents_are_served(doc_id, expected_content_type, disposition_filename):
+    with TestClient(create_app()) as client:
+        resp = client.get(f"/intake/documents/{doc_id}")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == expected_content_type
+        assert disposition_filename in resp.headers["content-disposition"]
+        assert len(resp.content) > 0
+
+
 def test_incomplete_pdf_still_rejected():
     with TestClient(create_app()) as client:
         resp = client.post("/intake/parse", json={
