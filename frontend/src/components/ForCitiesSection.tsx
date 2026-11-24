@@ -5,7 +5,7 @@ export const ForCitiesSection: React.FC = () => {
   return (
     <section id="for-cities" className="py-12 sm:py-16 border-b border-[#1c1d21]/15 scroll-mt-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-[#1c1d21] text-white rounded-3xl p-8 sm:p-12 relative overflow-hidden shadow-xl">
+        <div className="bg-[#1c1d21] text-white rounded-3xl p-8 sm:p-12 relative overflow-hidden shadow-xl selection:bg-white/30 selection:text-white">
           {/* Architectural grid overlay */}
           <div
             className="absolute inset-0 opacity-10 pointer-events-none"
@@ -17,7 +17,7 @@ export const ForCitiesSection: React.FC = () => {
 
           <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
             <div className="lg:col-span-7 space-y-4">
-              <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-white/10 text-white/90 font-mono text-xs uppercase tracking-wider font-bold">
+              <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-white/10 text-white/90 selection:bg-white/30 selection:text-white font-mono text-xs uppercase tracking-wider font-bold">
                 <Landmark className="h-3.5 w-3.5 text-white/80" />
                 <span>FOR CITIES &amp; MUNICIPALITIES</span>
               </div>
@@ -28,10 +28,6 @@ export const ForCitiesSection: React.FC = () => {
                 Building departments face unprecedented permitting volumes. KISO automates the repetitive preliminary plan-check, freeing licensed municipal plan examiners to focus on complex architectural judgments.
               </p>
               <div className="pt-2 flex flex-wrap gap-4 text-xs font-mono">
-                <div className="flex items-center space-x-2">
-                  <CheckCircle className="h-4 w-4 text-emerald-400" />
-                  <span>85% Faster Plan Intake</span>
-                </div>
                 <div className="flex items-center space-x-2">
                   <CheckCircle className="h-4 w-4 text-emerald-400" />
                   <span>Exact Municipal Code Citations</span>

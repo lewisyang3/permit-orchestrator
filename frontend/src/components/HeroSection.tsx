@@ -32,9 +32,9 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
   };
 
   return (
-    <section className="relative overflow-hidden pt-8 sm:pt-14 pb-12 sm:pb-20 border-b border-[#1c1d21]/15">
+    <section className="relative overflow-hidden min-h-[calc(100vh-5rem)] sm:min-h-[calc(100vh-6rem)] flex flex-col justify-center pt-8 sm:pt-14 pb-12 sm:pb-20 border-b border-[#1c1d21]/15">
       {/* Background paper texture & subtle blueprint perspective guidelines */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full my-auto">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
           {/* Left Column: Hero Copy & Actions */}
           <div className="lg:col-span-6 space-y-5 sm:space-y-6 z-10">
