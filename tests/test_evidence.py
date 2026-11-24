@@ -80,6 +80,60 @@ def test_text_document_reports_lines_without_pages():
     assert (loc.page, loc.line, loc.bboxes) == (None, 2, [])
 
 
+def test_truncated_number_is_not_verified():
+    doc = text_document("Occupant Load: 140")
+    assert locate_quote(doc, "Occupant Load: 14") is None
+
+
+def test_number_inside_other_number_not_found():
+    assert locate_quote(text_document("Zip: 95125"), "12") is None
+
+
+@pytest.mark.parametrize(
+    "text, quote",
+    [
+        ("Rear Setback: 20.5 ft", "Rear Setback: 20"),  # cut at a decimal point
+        ("Occupant Load: 1,400", "Occupant Load: 1"),  # cut at a thousands comma
+        ("Setback: 20.5 ft", "5 ft"),  # starts after a decimal point
+        ("Occupant Load: 1,400", "400"),  # starts after a thousands comma
+    ],
+)
+def test_quote_cut_inside_a_number_is_not_found(text, quote):
+    assert locate_quote(text_document(text), quote) is None
+
+
+@pytest.mark.parametrize(
+    "text, quote",
+    [
+        ("Rear Setback: 20.", "Rear Setback: 20"),  # sentence-ending period
+        ("Load: 14, then more", "Load: 14"),  # comma followed by a space
+        ("Rear Setback: 20.5 ft", "Rear Setback: 20.5"),  # the whole number
+        ("Occupant Load: 1,400", "Occupant Load: 1,400"),
+    ],
+)
+def test_quote_ending_at_a_number_boundary_is_found(text, quote):
+    assert locate_quote(text_document(text), quote) is not None
+
+
+def test_later_whole_token_match_is_used():
+    loc = locate_quote(text_document("Load: 140\nLoad: 14"), "Load: 14")
+    assert loc.line == 2
+
+
+def test_truncated_quote_flagged_by_build_evidence():
+    from orchestrator.handlers.intake import build_evidence, deterministic_parse_document
+
+    doc = text_document(Path("fixtures/sample_plans/commercial_restaurant_patio.txt").read_text())
+    permit, _, _ = deterministic_parse_document(doc, "commercial_restaurant_patio.txt")
+    assert permit.fire.occupant_load == 140
+    permit.fire.occupant_load = 14
+    evidence, warnings = build_evidence(
+        permit, doc, {"fire.occupant_load": ("Occupant Load: 14", None)}, "gemini"
+    )
+    assert evidence["fire.occupant_load"].status == "unverified"
+    assert any("not found" in w and "fire.occupant_load" in w for w in warnings)
+
+
 # --- value_in_quote -----------------------------------------------------------
 
 @pytest.mark.parametrize(
@@ -96,10 +150,47 @@ def test_text_document_reports_lines_without_pages():
         ("slab_on_grade", "Foundation Type: Slab-on-grade", True),
         ("CA", "State: CA", True),
         (True, "Sprinklers: yes", None),
+        # feet-and-inches read as one number; its parts don't count on their own
+        (18.5, "FRONT SETBACK: 18'-6\"", True),
+        (18.0, "FRONT SETBACK: 18'-0\"", True),
+        (18.0, "FRONT SETBACK: 18'-6\"", False),
+        (6.0, "FRONT SETBACK: 18'-6\"", False),
+        (18.54, "Rear Setback: 18' 6 1/2\"", True),
+        (25.0, "Side Setback: 25'", True),
+        (18.5, "FRONT SETBACK: 18’-6”", True),  # typographic marks
+        # fractions
+        (0.75, "Water Meter Size: 3/4\"", True),
+        (1.5, "Meter: 1-1/2 in", True),
+        (3.0, "Meter: 3/4\"", False),
+        # scale suffixes
+        (1200000.0, "Estimated Cost: $1.2M", True),
+        (85000.0, "Estimated Cost: $85k", True),
+        # state names
+        ("CA", "State: California", True),
+        ("NV", "State: California", False),
+        # no number at all: can't tell
+        (21780.0, "Lot Area: half acre", None),
     ],
 )
 def test_value_in_quote(value, quote, expected):
     assert value_in_quote(value, quote) is expected
+
+
+def test_converted_values_verified_without_mismatch_warning():
+    from orchestrator.handlers.intake import build_evidence, deterministic_plan_parse
+
+    permit, _ = deterministic_plan_parse(SAMPLE_TXT, "plan.txt")
+    permit.zoning.setback_front_ft = 18.5
+    permit.property_address.state = "CA"
+    text = SAMPLE_TXT + "\nFRONT SETBACK: 18'-6\"\nState: California\n"
+    claims = {
+        "zoning.setback_front_ft": ("FRONT SETBACK: 18'-6\"", None),
+        "property_address.state": ("State: California", None),
+    }
+    evidence, warnings = build_evidence(permit, text_document(text), claims, "gemini")
+    for path in claims:
+        assert (evidence[path].status, evidence[path].value_supported) == ("verified", True), path
+    assert not any("does not state" in w for w in warnings)
 
 
 # --- intake: deterministic path ---------------------------------------------
@@ -130,6 +221,18 @@ async def test_text_upload_cites_lines():
     assert (ev.status, ev.page, ev.quote) == ("verified", None, "City: San Jose")
     assert SAMPLE_TXT.splitlines()[ev.line - 1] == "City: San Jose"
     assert warnings == []
+
+
+def test_text_document_drops_page_hint_on_unverified_citation():
+    # Gemini is asked for a page even on text uploads; a text document has none, so an
+    # unverified citation must not point the viewer at "page 1" of a non-PDF.
+    from orchestrator.handlers.intake import build_evidence, deterministic_plan_parse
+
+    permit, _ = deterministic_plan_parse(SAMPLE_TXT, "plan.txt")
+    claims = {"zoning.setback_rear_ft": ("Rear Setback: 12.0 ft", 1)}
+    evidence, _ = build_evidence(permit, text_document(SAMPLE_TXT), claims, "gemini")
+    rear = evidence["zoning.setback_rear_ft"]
+    assert (rear.status, rear.page, rear.line) == ("unverified", None, None)
 
 
 @pytest.mark.anyio
@@ -222,6 +325,30 @@ def test_uploaded_pdf_is_served_back_by_document_id(tmp_path):
         assert got.headers["content-type"] == "application/pdf"
         assert got.headers["content-disposition"] == 'inline; filename="plan.pdf"'
         assert got.content == SAMPLE_PDF
+
+
+@pytest.mark.parametrize(
+    "filename, content, mime_type, served_as",
+    [
+        # The type comes from the contents, the way load_document reads them, not the name.
+        ("Plan Set", SAMPLE_PDF, "application/pdf", "application/pdf"),
+        ("plan.pdf.download", SAMPLE_PDF, "application/pdf", "application/pdf"),
+        ("notes", SAMPLE_TXT.encode(), "text/plain", "text/plain; charset=utf-8"),
+    ],
+)
+def test_upload_without_known_extension_is_served_by_content(tmp_path, filename, content, mime_type, served_as):
+    with patch("orchestrator.handlers.intake.UPLOADS_DIR", tmp_path), TestClient(create_app()) as client:
+        resp = client.post("/intake/parse", json={
+            "filename": filename,
+            "content_base64": base64.b64encode(content).decode(),
+            "mime_type": mime_type,
+        })
+        assert resp.status_code == 200, resp.text
+        doc_id = resp.json()["document_id"]
+        got = client.get(f"/intake/documents/{doc_id}")
+        assert got.status_code == 200
+        assert got.headers["content-type"] == served_as
+        assert got.content == content
 
 
 @pytest.mark.parametrize("bad", ["pm-intake-zzzzzzzz", "pm-intake-0000000", "..%2F..%2Fetc%2Fpasswd", "pm-intake-deadbeef"])

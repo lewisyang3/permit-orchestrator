@@ -13,6 +13,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable, List, Optional, Sequence, Tuple
 
+from contract.normalize import US_STATE_CODES, US_STATES
+
 logger = logging.getLogger(__name__)
 
 # Words whose tops are within this many points share a line.
@@ -165,12 +167,30 @@ def _boxes(page: PageText, start: int, end: int) -> List[Tuple[float, float, flo
     ]
 
 
+def _continues_number(hay: str, i: int, step: int) -> bool:
+    """True if hay[i] is a decimal point or thousands comma with a digit beyond it (i + step)."""
+    j = i + step
+    return 0 <= i < len(hay) and 0 <= j < len(hay) and hay[i] in ".," and hay[j].isdigit()
+
+
 def _find_in_page(page: PageText, needle: str) -> Optional[Tuple[int, int]]:
     hay, index = _normalize_with_map(page.text)
     at = hay.find(needle)
-    if at < 0:
-        return None
-    return index[at], index[at + len(needle) - 1] + 1
+    while at >= 0:
+        end = at + len(needle)
+        # A quote must not start or end in the middle of a word or number:
+        # "Occupant Load: 14" must not match inside "Occupant Load: 140", and
+        # "Setback: 20" / "Load: 1" must not match inside "20.5" / "1,400".
+        starts_ok = not (needle[0].isalnum() and at > 0 and hay[at - 1].isalnum()) and not (
+            needle[0].isdigit() and _continues_number(hay, at - 1, -1)
+        )
+        ends_ok = not (needle[-1].isalnum() and end < len(hay) and hay[end].isalnum()) and not (
+            needle[-1].isdigit() and _continues_number(hay, end, 1)
+        )
+        if starts_ok and ends_ok:
+            return index[at], index[end - 1] + 1
+        at = hay.find(needle, at + 1)
+    return None
 
 
 def locate_quote(doc: DocumentText, quote: Optional[str], page_hint: Optional[int] = None) -> Optional[Located]:
@@ -212,16 +232,75 @@ def line_at(text: str, start: int, end: int) -> str:
 # ---------------------------------------------------------------------------
 
 _NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?|\.\d+")
+# 18'-6"  18' 6 1/2"  25'  (feet, optional inches with an optional fraction)
+_FEET_INCHES = re.compile(
+    r"(\d+(?:\.\d+)?)\s*['’′]"
+    r"(?:\s*-?\s*(\d+(?:\.\d+)?)?(?:[\s-]*(\d+)/(\d+))?\s*(?:[\"”″]|in\b))?"
+)
+_MIXED_FRACTION = re.compile(r"(\d+)[\s-]+(\d+)/(\d+)")
+_FRACTION = re.compile(r"(\d+)/(\d+)")
+_SCALED = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*(k|m|thousand|million)\b", re.IGNORECASE)
+_SCALE = {"k": 1e3, "thousand": 1e3, "m": 1e6, "million": 1e6}
+
+# Converted values (inches to feet, fractions) are compared loosely: Gemini may round them.
+_EXACT_TOL = 1e-6
+_CONVERTED_TOL = 0.005
 
 
-def _numbers(text: str) -> List[float]:
-    out = []
-    for tok in _NUMBER.findall(text):
+def _frac(num: str, den: str) -> Optional[float]:
+    d = float(den)
+    return float(num) / d if d else None
+
+
+def _numbers(text: str) -> List[Tuple[float, float]]:
+    """Every number the text states, as (value, tolerance).
+
+    Feet-and-inches and fractions are read as one number, and their parts are not
+    counted on their own: "18'-6\"" states 18.5, not 18 or 6.
+    """
+    out: List[Tuple[float, float]] = []
+    work = text
+
+    def consume(pattern: re.Pattern, read) -> None:
+        nonlocal work
+        def sub(m: re.Match) -> str:
+            val = read(m)
+            if val is not None:
+                out.append((val, _CONVERTED_TOL))
+            return " " * len(m.group(0))
+        work = pattern.sub(sub, work)
+
+    def feet_inches(m: re.Match) -> Optional[float]:
+        ft = float(m.group(1))
+        inches = float(m.group(2)) if m.group(2) else 0.0
+        if m.group(3):
+            frac = _frac(m.group(3), m.group(4))
+            if frac is None:
+                return None
+            inches += frac
+        return ft + inches / 12
+
+    def mixed(m: re.Match) -> Optional[float]:
+        frac = _frac(m.group(2), m.group(3))
+        return None if frac is None else float(m.group(1)) + frac
+
+    consume(_FEET_INCHES, feet_inches)
+    consume(_MIXED_FRACTION, mixed)
+    consume(_FRACTION, lambda m: _frac(m.group(1), m.group(2)))
+
+    for m in _SCALED.finditer(work):  # "$1.2M": keep 1.2 (below) and add 1,200,000
+        out.append((float(m.group(1).replace(",", "")) * _SCALE[m.group(2).lower()], _EXACT_TOL))
+
+    for tok in _NUMBER.findall(work):
         try:
-            out.append(float(tok.replace(",", "")))
+            out.append((float(tok.replace(",", "")), _EXACT_TOL))
         except ValueError:
             continue
     return out
+
+
+def _state_names(code: str) -> List[str]:
+    return [name for name, c in US_STATES.items() if c == code]
 
 
 def _words(text: str) -> str:
@@ -231,17 +310,26 @@ def _words(text: str) -> str:
 def value_in_quote(value: Any, quote: str) -> Optional[bool]:
     """Whether the quoted text states this value. None when that can't be judged from text.
 
-    Numbers must appear as a number in the quote (commas ignored). Strings and enum
-    values must appear as words. Booleans are interpretations ("not required" -> False),
-    so they are left to the worker.
+    Numbers must appear as a number in the quote (commas ignored; feet-and-inches,
+    fractions and k/M suffixes are converted); a quote with no number can't be judged.
+    Strings and enum values must appear as words, and a state code may appear as its
+    name. Booleans are interpretations ("not required" -> False), so they are left to
+    the worker.
     """
     if value is None or isinstance(value, bool):
         return None
     if hasattr(value, "value"):  # Enum
         value = value.value
     if isinstance(value, (int, float)):
-        return any(abs(n - float(value)) < 1e-6 for n in _numbers(quote))
+        numbers = _numbers(quote)
+        if not numbers:
+            return None  # "half acre": no number to compare against
+        return any(abs(n - float(value)) < tol for n, tol in numbers)
     words = _words(str(value))
     if not words:
         return None
-    return f" {words} " in f" {_words(quote)} "
+    candidates = [words]
+    if str(value) in US_STATE_CODES:  # "CA" is stated by "California"
+        candidates += [_words(name) for name in _state_names(str(value))]
+    haystack = f" {_words(quote)} "
+    return any(f" {w} " in haystack for w in candidates)

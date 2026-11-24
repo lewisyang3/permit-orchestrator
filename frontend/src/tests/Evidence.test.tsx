@@ -104,6 +104,40 @@ describe('PermitForm evidence chips', () => {
     expect(hit).toHaveTextContent('21Front Setback: 25.0 ft');
     expect(fetchMock).toHaveBeenCalledWith('/intake/documents/pm-intake-0123abcd');
   });
+
+  // The viewer must choose its renderer from the served file, not from the span.
+  const openUploaded = (response: Response, over: Partial<EvidenceSpan> = {}) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(response);
+    renderForm({
+      ...permitWithEvidence(),
+      source_document_id: 'pm-intake-0123abcd',
+      evidence: { 'zoning.setback_rear_ft': span('zoning.setback_rear_ft', over) },
+    });
+    fireEvent.click(screen.getByTestId('evidence-zoning.setback_rear_ft'));
+    return screen.getByRole('dialog');
+  };
+
+  it('an unverified citation on a text upload shows the text, even with a page hint', async () => {
+    const dialog = openUploaded(new Response('Rear Setback: 20.0 ft\nline 2', { status: 200 }), {
+      quote: 'Rear Setback: 12.0 ft', status: 'unverified', page: 1, line: null, bboxes: [],
+    });
+    expect(await within(dialog).findByText('Rear Setback: 20.0 ft')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/Could not open the document/)).toBeNull();
+    // Not found in the document, so nothing is highlighted.
+    expect(within(dialog).queryByTestId('evidence-highlight')).toBeNull();
+  });
+
+  it('a file it cannot render says so instead of failing', async () => {
+    const dialog = openUploaded(
+      new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), { status: 200, headers: { 'Content-Type': 'image/png' } }),
+    );
+    expect(await within(dialog).findByText(/file type can't be previewed/)).toBeInTheDocument();
+  });
+
+  it('a missing upload reports the error', async () => {
+    const dialog = openUploaded(new Response('Document not found', { status: 404 }));
+    expect(await within(dialog).findByText('Could not open the document: HTTP 404')).toBeInTheDocument();
+  });
 });
 
 describe('department findings', () => {

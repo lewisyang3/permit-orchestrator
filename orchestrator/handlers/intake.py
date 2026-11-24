@@ -629,6 +629,11 @@ def _extract_text_from_pdf_stream(pdf_bytes: bytes) -> str:
         return ""
 
 
+def _is_pdf(head: bytes) -> bool:
+    """Whether the bytes start (after whitespace) with the PDF marker."""
+    return head.lstrip()[:5] == b"%PDF-"
+
+
 def load_document(
     content_text: Optional[str],
     content_bytes: Optional[bytes],
@@ -644,7 +649,7 @@ def load_document(
         return text_document(content_text)
     if not content_bytes:
         return text_document("")
-    if content_bytes.lstrip()[:5] == b"%PDF-":
+    if _is_pdf(content_bytes):
         try:
             doc = extract_pdf(content_bytes)
             if doc.has_text_layer:
@@ -880,7 +885,10 @@ def build_evidence(
             if can_verify:
                 not_found.append(path)
             evidence[path] = EvidenceSpan(
-                field_path=path, quote=quote, page=page_hint, status="unverified",
+                # A text document has no pages: drop the parser's page hint so the
+                # citation isn't shown on a page that doesn't exist.
+                field_path=path, quote=quote, page=page_hint if doc.kind != "text" else None,
+                status="unverified",
                 value_supported=value_in_quote(value, quote), method=method,
             )
         else:
@@ -998,7 +1006,7 @@ EVIDENCE (a reviewer uses this to check every value against the document):
   (e.g. "property_address.city", "fire.occupant_load").
 - "quote" must be copied character-for-character from the document: the label and value as printed,
   e.g. "FRONT SETBACK: 18'-0\"". Never paraphrase, translate, or combine text from different places.
-- "page" is the 1-based page number where the quote appears (1 for text documents).
+- "page" is the 1-based page number where the quote appears (null for text documents).
 - If a value comes from a drawing or image with no selectable text, still quote what is printed there.
 
 Do not include markdown code fences (```json ... ```) in your output. Return raw JSON only.
@@ -1312,6 +1320,27 @@ async def parse_intake_plan(req: IntakeParseRequest) -> IntakeParseResponse:
 _DOCUMENT_ID = re.compile(r"^pm-intake-[0-9a-f]{8}$")
 _DOCUMENT_TYPES = {".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg",
                    ".jpeg": "image/jpeg", ".txt": "text/plain", ".md": "text/markdown"}
+_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
+
+
+def _media_type(path: Path) -> str:
+    """The served type, decided from the contents first, the same way load_document reads them.
+
+    The extension alone isn't enough: an upload named "Plan Set" may still be a PDF that was
+    parsed (and its citations verified) as one, and the viewer picks its renderer from this type.
+    """
+    with path.open("rb") as fh:
+        head = fh.read(1024)
+    if _is_pdf(head):
+        return "application/pdf"
+    suffix = path.suffix.lower()
+    if suffix in _IMAGE_SUFFIXES:
+        return _DOCUMENT_TYPES[suffix]
+    try:
+        path.read_bytes().decode("utf-8")
+    except UnicodeDecodeError:
+        return "application/octet-stream"
+    return "text/markdown; charset=utf-8" if suffix == ".md" else "text/plain; charset=utf-8"
 
 
 @router.get(
@@ -1327,7 +1356,7 @@ async def get_intake_document(document_id: str) -> FileResponse:
     if not matches or not matches[0].is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     path = matches[0]
-    media_type = _DOCUMENT_TYPES.get(path.suffix.lower(), "application/octet-stream")
+    media_type = _media_type(path)
     # inline so the browser (and pdf.js) can display it rather than download it
     return FileResponse(path, media_type=media_type,
                         headers={"Content-Disposition": f'inline; filename="{path.name[len(document_id) + 1:]}"'})

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, FileSearch, Loader2, X, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { EvidenceSpan } from '../types';
 import { documentUrl } from '../utils/api';
@@ -33,7 +33,6 @@ interface PdfEvidenceViewerProps {
 
 export const PdfEvidenceViewer: React.FC<PdfEvidenceViewerProps> = ({ documentId, span, onClose }) => {
   const tone = evidenceTone(span);
-  const isPdf = span.page != null || (span.line == null && span.status === 'unverified');
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -86,10 +85,8 @@ export const PdfEvidenceViewer: React.FC<PdfEvidenceViewerProps> = ({ documentId
             <p className="text-xs text-slate-500 text-center py-10">
               The original document isn't available for this permit, so only the quoted text can be shown.
             </p>
-          ) : isPdf ? (
-            <PdfPage documentId={documentId} span={span} />
           ) : (
-            <TextLines documentId={documentId} span={span} />
+            <DocumentBody documentId={documentId} span={span} />
           )}
         </div>
       </div>
@@ -97,7 +94,50 @@ export const PdfEvidenceViewer: React.FC<PdfEvidenceViewerProps> = ({ documentId
   );
 };
 
-const PdfPage: React.FC<{ documentId: string; span: EvidenceSpan }> = ({ documentId, span }) => {
+type LoadedDocument =
+  | { kind: 'pdf'; data: ArrayBuffer }
+  | { kind: 'text'; text: string }
+  | { kind: 'other' };
+
+/**
+ * Fetch the upload once and pick the renderer from what the server says it is.
+ * The span can't tell: a text upload's unverified citation may still carry a page hint.
+ */
+const DocumentBody: React.FC<{ documentId: string; span: EvidenceSpan }> = ({ documentId, span }) => {
+  const [loaded, setLoaded] = useState<LoadedDocument | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoaded(null);
+    setError(null);
+    fetch(documentUrl(documentId))
+      .then(async (res): Promise<LoadedDocument> => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const type = (res.headers.get('content-type') ?? '').toLowerCase();
+        if (type.startsWith('application/pdf')) return { kind: 'pdf', data: await res.arrayBuffer() };
+        if (type.startsWith('text/')) return { kind: 'text', text: await res.text() };
+        return { kind: 'other' };
+      })
+      .then((doc) => !cancelled && setLoaded(doc))
+      .catch((err) => !cancelled && setError(`Could not open the document: ${err?.message ?? err}`));
+    return () => {
+      cancelled = true;
+    };
+  }, [documentId]);
+
+  if (error) return <p className="text-xs text-rose-700 text-center py-10">{error}</p>;
+  if (!loaded) return <Loader2 className="h-6 w-6 animate-spin text-slate-400 mx-auto my-10" />;
+  if (loaded.kind === 'pdf') return <PdfPage data={loaded.data} span={span} />;
+  if (loaded.kind === 'text') return <TextLines text={loaded.text} span={span} />;
+  return (
+    <p className="text-xs text-slate-500 text-center py-10">
+      This file type can't be previewed; the quoted text is shown above.
+    </p>
+  );
+};
+
+const PdfPage: React.FC<{ data: ArrayBuffer; span: EvidenceSpan }> = ({ data, span }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const highlightRef = useRef<HTMLDivElement | null>(null);
   const [doc, setDoc] = useState<PdfDoc | null>(null);
@@ -111,7 +151,7 @@ const PdfPage: React.FC<{ documentId: string; span: EvidenceSpan }> = ({ documen
     let loaded: PdfDoc | null = null;
     setError(null);
     loadPdfJs()
-      .then((pdfjs) => pdfjs.getDocument(documentUrl(documentId)).promise)
+      .then((pdfjs) => pdfjs.getDocument({ data: new Uint8Array(data.slice(0)) }).promise)
       .then((d) => {
         loaded = d;
         if (!cancelled) setDoc(d);
@@ -121,7 +161,7 @@ const PdfPage: React.FC<{ documentId: string; span: EvidenceSpan }> = ({ documen
       cancelled = true;
       loaded?.destroy();
     };
-  }, [documentId]);
+  }, [data]);
 
   useEffect(() => setPageNo(span.page ?? 1), [span]);
 
@@ -225,28 +265,14 @@ const PdfPage: React.FC<{ documentId: string; span: EvidenceSpan }> = ({ documen
   );
 };
 
-const TextLines: React.FC<{ documentId: string; span: EvidenceSpan }> = ({ documentId, span }) => {
-  const [lines, setLines] = useState<string[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+const TextLines: React.FC<{ text: string; span: EvidenceSpan }> = ({ text, span }) => {
+  const lines = useMemo(() => text.split('\n'), [text]);
   const hitRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    fetch(documentUrl(documentId))
-      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((t) => !cancelled && setLines(t.split('\n')))
-      .catch((err) => !cancelled && setError(`Could not open the document: ${err.message}`));
-    return () => {
-      cancelled = true;
-    };
-  }, [documentId]);
-
-  useEffect(() => {
     hitRef.current?.scrollIntoView?.({ block: 'center' });
-  }, [lines]);
+  }, [lines, span]);
 
-  if (error) return <p className="text-xs text-rose-700 text-center py-10">{error}</p>;
-  if (!lines) return <Loader2 className="h-6 w-6 animate-spin text-slate-400 mx-auto my-10" />;
   return (
     <div className="bg-white rounded-xl border border-slate-200 font-mono text-[11px] leading-5 overflow-x-auto">
       {lines.map((ln, i) => {
