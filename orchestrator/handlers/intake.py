@@ -22,6 +22,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, status
 from pydantic import ValidationError
 
+from contract.normalize import normalize_state
 from contract.models import (
     Applicant,
     ApplicantRole,
@@ -93,9 +94,9 @@ Estimated Cost: $85,000 USD
 
 Property Location:
 Address: 742 Evergreen Terrace
-City: Springfield
-State: OR
-Zip: 97477
+City: San Jose
+State: CA
+Zip: 95125
 
 Applicant Information:
 Name: Homer Simpson
@@ -147,9 +148,9 @@ Estimated Cost: $210,000 USD
 
 Property Location:
 Address: 104 Main Street
-City: Metropolis
-State: NY
-Zip: 10001
+City: San Jose
+State: CA
+Zip: 95113
 
 Applicant Information:
 Name: Gordon Ramsay
@@ -200,9 +201,9 @@ Estimated Cost: $650,000 USD
 
 Property Location:
 Address: 4800 Industrial Parkway
-City: Columbus
-State: OH
-Zip: 43228
+City: San Jose
+State: CA
+Zip: 95131
 
 Applicant Information:
 Name: Bruce Wayne
@@ -299,32 +300,6 @@ def _clean_bool(val: Any) -> Optional[bool]:
     return None
 
 
-_US_STATES: Dict[str, str] = {
-    "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR", "california": "CA",
-    "colorado": "CO", "connecticut": "CT", "delaware": "DE", "district of columbia": "DC",
-    "florida": "FL", "georgia": "GA", "hawaii": "HI", "idaho": "ID", "illinois": "IL",
-    "indiana": "IN", "iowa": "IA", "kansas": "KS", "kentucky": "KY", "louisiana": "LA",
-    "maine": "ME", "maryland": "MD", "massachusetts": "MA", "michigan": "MI", "minnesota": "MN",
-    "mississippi": "MS", "missouri": "MO", "montana": "MT", "nebraska": "NE", "nevada": "NV",
-    "new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM", "new york": "NY",
-    "north carolina": "NC", "north dakota": "ND", "ohio": "OH", "oklahoma": "OK", "oregon": "OR",
-    "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC", "south dakota": "SD",
-    "tennessee": "TN", "texas": "TX", "utah": "UT", "vermont": "VT", "virginia": "VA",
-    "washington": "WA", "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY",
-}
-_US_STATE_CODES = frozenset(_US_STATES.values())
-
-
-def _normalize_state(val: Optional[str]) -> Optional[str]:
-    """Map a state name or code to its two-letter USPS code; None if unrecognized."""
-    if not val:
-        return None
-    s = re.sub(r"\s+", " ", val.strip().rstrip(".")).lower()
-    if s.upper() in _US_STATE_CODES:
-        return s.upper()
-    return _US_STATES.get(s)
-
-
 def _normalize_token(val: str) -> str:
     """Lowercase and collapse whitespace/hyphens to underscores for enum matching."""
     return re.sub(r"[\s-]+", "_", val.strip().lower())
@@ -365,7 +340,7 @@ def validate_extracted_permit_dict(
         addr_raw = {}
     street = _clean_str(_first(addr_raw, "street", "address"))
     city = _clean_str(addr_raw.get("city"))
-    state = _normalize_state(_clean_str(addr_raw.get("state")))
+    state = normalize_state(_clean_str(addr_raw.get("state")))
     zip_code = _clean_str(_first(addr_raw, "zip", "zip_code"))
 
     if not street:

@@ -74,8 +74,8 @@ def test_deterministic_text_plan_parsing(sample_plan_text):
     assert isinstance(permit, Permit)
     assert permit.project_title == "Single Family Residential Rear Addition"
     assert permit.property_address.street == "742 Evergreen Terrace"
-    assert permit.property_address.city == "Springfield"
-    assert permit.property_address.zip == "97477"
+    assert permit.property_address.city == "San Jose"
+    assert permit.property_address.zip == "95125"
     assert permit.applicant.name == "Homer Simpson"
     assert permit.applicant.role.value == "homeowner"
     assert permit.zoning.zone_code == ZoneCode.R1

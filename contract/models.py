@@ -199,6 +199,8 @@ class DepartmentEvaluationRequest(BaseModel):
 class DepartmentEvaluationResponse(BaseModel):
     permit_id: str
     department: DepartmentName
+    jurisdiction_id: Optional[str] = None  # city pack the permit was evaluated against
+    rule_set_id: Optional[str] = None
     status: DepartmentStatus  # APPROVED or REJECTED
     execution_time_ms: float
     reasons: List[EvaluationReason]

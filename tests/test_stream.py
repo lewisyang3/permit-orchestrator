@@ -86,9 +86,9 @@ def sample_permit_payload() -> dict:
         "estimated_cost_usd": 65000,
         "property_address": {
             "street": "100 Test Lane",
-            "city": "Springfield",
+            "city": "San Jose",
             "state": "CA",
-            "zip": "94016",
+            "zip": "95125",
         },
         "applicant": {
             "name": "Jane Tester",

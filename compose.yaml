@@ -62,7 +62,7 @@ services:
       <<: *department-environment
       DEPARTMENT: zoning
       PORT: "8001"
-      RULE_FILE: /app/rules/zoning.yaml
+      RULES_ROOT: /app/rules
 
   fire:
     <<: *department
@@ -71,7 +71,7 @@ services:
       <<: *department-environment
       DEPARTMENT: fire
       PORT: "8002"
-      RULE_FILE: /app/rules/fire.yaml
+      RULES_ROOT: /app/rules
 
   water:
     <<: *department
@@ -80,7 +80,7 @@ services:
       <<: *department-environment
       DEPARTMENT: water
       PORT: "8003"
-      RULE_FILE: /app/rules/water.yaml
+      RULES_ROOT: /app/rules
 
   structural:
     <<: *department
@@ -89,7 +89,7 @@ services:
       <<: *department-environment
       DEPARTMENT: structural
       PORT: "8004"
-      RULE_FILE: /app/rules/structural.yaml
+      RULES_ROOT: /app/rules
 
 volumes:
   permit-data:
