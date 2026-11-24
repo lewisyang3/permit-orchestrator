@@ -292,11 +292,13 @@ def test_single_department_rejection_extracts_violations():
         "department": "fire",
         "rule_id": "FIRE-001",
         "message": "Automatic sprinkler system required for assembly occupancy over 100 occupants.",
+        "rule_name": "Sprinkler Requirement",
     }
     assert violations[1] == {
         "department": "fire",
         "rule_id": "FIRE-002",
         "message": "Minimum 2 egress exits required for occupant load 110 (1 provided).",
+        "rule_name": "Egress Exits",
     }
 
 

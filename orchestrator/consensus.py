@@ -62,11 +62,19 @@ def _extract_violations(dept: str, res: Any) -> List[Dict[str, Any]]:
             if passed is False or (passed is None and _extract_status(res) == DepartmentStatus.REJECTED):
                 rule_id = getattr(r, "rule_id", None) if not isinstance(r, dict) else r.get("rule_id")
                 message = getattr(r, "message", None) if not isinstance(r, dict) else r.get("message")
-                violations.append({
+                violation = {
                     "department": dept,
                     "rule_id": rule_id or "UNKNOWN",
                     "message": message or "Rule violation",
-                })
+                }
+                # Keep what the reviewer needs to check the finding: plan text and city sources.
+                for key in ("rule_name", "evidence", "rule_sources"):
+                    val = getattr(r, key, None) if not isinstance(r, dict) else r.get(key)
+                    if val:
+                        violation[key] = [
+                            v.model_dump(mode="json") if hasattr(v, "model_dump") else v for v in val
+                        ] if isinstance(val, list) else val
+                violations.append(violation)
 
     if not violations:
         # Fallback if department rejected without specific reason objects

@@ -223,7 +223,10 @@ async def test_gemini_multimodal_extraction_mock(sample_pdf_bytes):
             assert permit.project_title == "Commercial Restaurant Expansion"
             assert permit.zoning.zone_code == ZoneCode.C1
             assert permit.structural.construction_type == ConstructionType.LIGHT_STEEL
-            assert len(warnings) == 0
+            # This mock response cites no evidence, so the only warning says so.
+            assert len(warnings) == 1
+            assert warnings[0].startswith("No source text was cited for: project_title")
+            assert permit.evidence == {}
 
 
 @pytest.mark.anyio
