@@ -480,17 +480,14 @@ export const App: React.FC = () => {
 
       {/* Footer matching KISO drafting style */}
       <footer className="border-t border-[#1c1d21]/15 py-10 bg-white/40 mt-16 text-center text-xs text-slate-500 font-mono">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center space-x-2">
-            <img
-              src="/assets/kiso_logo_icon.png"
-              alt="KISO"
-              className="h-5 w-5 object-contain mix-blend-multiply"
-            />
-            <span className="font-extrabold text-[#1c1d21] font-sans">KISO</span>
-            <span>— Automated Municipal Permit Review Architecture</span>
-          </div>
-          <div>Distributed Sagas &bull; Unanimous Municipal Verification &bull; UC Berkeley x Google DeepMind</div>
+        <div className="max-w-7xl mx-auto px-4 flex items-center justify-center space-x-2">
+          <img
+            src="/assets/kiso_logo_icon.png"
+            alt="KISO"
+            className="h-5 w-5 object-contain mix-blend-multiply"
+          />
+          <span className="font-extrabold text-[#1c1d21] font-sans">KISO</span>
+          <span>— Automated Municipal Permit Review Architecture</span>
         </div>
       </footer>
     </div>
