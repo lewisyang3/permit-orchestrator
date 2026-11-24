@@ -1,27 +1,121 @@
 %PDF-1.4
-1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
-2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
-3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj
-4 0 obj << /Length 260 >> stream
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 1692 >>
+stream
 BT
-/F1 14 Tf 50 720 Td (Project Title: Single Family Residential Rear Addition) Tj
-/F1 10 Tf 50 700 Td (Address: 742 Evergreen Terrace, Springfield, OR 97477) Tj
-/F1 10 Tf 50 680 Td (Zone District: R-1 | Building Height: 16.5 ft | Lot Area: 8400 sq ft) Tj
-/F1 10 Tf 50 660 Td (Occupancy Type: residential | Sprinklers: No | Exits: 2) Tj
-/F1 10 Tf 50 640 Td (Water Meter Size: 0.75 | Stories: 1 | Framing: wood_frame) Tj
+/F1 9 Tf
+40 760 Td
+13 TL
+(PERMIT APPLICATION & ARCHITECTURAL SPECIFICATIONS) Tj
+T*
+(Project Title: Single Family Residential Rear Addition) Tj
+T*
+(Project Description: Construction of a 550 sqft single-story rear master suite addition to an existing single-family residence.) Tj
+T*
+(Estimated Cost: $85,000 USD) Tj
+T*
+T*
+(Property Location:) Tj
+T*
+(Address: 742 Evergreen Terrace) Tj
+T*
+(City: Springfield) Tj
+T*
+(State: OR) Tj
+T*
+(Zip: 97477) Tj
+T*
+T*
+(Applicant Information:) Tj
+T*
+(Name: Homer Simpson) Tj
+T*
+(Role: homeowner) Tj
+T*
+(Email: homer.simpson@example.com) Tj
+T*
+(Phone: \(555\) 733-4663) Tj
+T*
+T*
+(Zoning Parameters:) Tj
+T*
+(Zone District: R-1 \(Low Density Residential\)) Tj
+T*
+(Building Height: 16.5 ft) Tj
+T*
+(Lot Area: 8,400 sq ft) Tj
+T*
+(Existing Footprint: 1,800 sq ft) Tj
+T*
+(Proposed Total Footprint: 2,350 sq ft) Tj
+T*
+(Front Setback: 25.0 ft) Tj
+T*
+(Rear Setback: 32.0 ft) Tj
+T*
+(Side Setback: 8.5 ft) Tj
+T*
+T*
+(Fire Life Safety:) Tj
+T*
+(Occupancy Type: residential) Tj
+T*
+(Occupant Load: 5 persons) Tj
+T*
+(Fire Alarm System: Present and hardwired) Tj
+T*
+(Automatic Sprinklers: not required / None) Tj
+T*
+(Egress Exits Count: 2 exterior exit doors) Tj
+T*
+(Distance to Nearest Fire Hydrant: 140 ft) Tj
+T*
+T*
+(Water & Utilities:) Tj
+T*
+(Water Service Meter Size: 0.75 inches) Tj
+T*
+(Estimated Daily Water Usage: 280 gpd) Tj
+T*
+(Backflow Preventer Installed: Yes \(dual check valve\)) Tj
+T*
+(Stormwater Management Plan: Yes \(pervious pavers & rain garden\)) Tj
+T*
+T*
+(Structural Engineering:) Tj
+T*
+(Stories: 1 story) Tj
+T*
+(Framing Construction: wood_frame \(Type V-B\)) Tj
+T*
+(Seismic Design Category: C) Tj
+T*
+(Foundation Type: continuous_spread_footing) Tj
+T*
 ET
 endstream
 endobj
-5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
 xref
 0 6
 0000000000 65535 f 
 0000000009 00000 n 
 0000000058 00000 n 
 0000000115 00000 n 
-0000000244 00000 n 
-0000000554 00000 n 
+0000000241 00000 n 
+0000001985 00000 n 
 trailer << /Size 6 /Root 1 0 R >>
 startxref
-623
+2055
 %%EOF

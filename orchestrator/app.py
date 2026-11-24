@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
@@ -361,4 +362,25 @@ def create_app(
     return app
 
 
+def load_dotenv_defaults(path: Optional[Path] = None) -> None:
+    """Load KEY=VALUE pairs from the repo's .env into os.environ without overriding.
+
+    Called once when the module-level ``app`` is built for uvicorn, never from
+    handlers, so that importing handler modules (e.g. in tests) has no environment
+    side effects.
+    """
+    env_path = path or Path(__file__).resolve().parent.parent / ".env"
+    if not env_path.is_file():
+        return
+    for raw in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key and key not in os.environ:
+            os.environ[key] = value.strip().strip("'\"")
+
+
+load_dotenv_defaults()
 app = create_app()
