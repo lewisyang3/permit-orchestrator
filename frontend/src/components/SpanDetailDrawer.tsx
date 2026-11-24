@@ -1,13 +1,26 @@
 import React from 'react';
 import { ParsedSpan } from '../utils/traceParser';
 import { formatDurationMs, formatTimestamp } from '../utils/formatters';
+import { DepartmentFinding } from '../types';
+import { FindingEvidence } from './FindingEvidence';
 import {
   X,
   Clock,
   Layers,
   AlertTriangle,
   RotateCw,
+  ListChecks,
 } from 'lucide-react';
+
+function findingTone(f: DepartmentFinding): { label: string; card: string; badge: string } {
+  if (f.passed) return { label: 'pass', card: 'bg-emerald-50/40 border-emerald-200', badge: 'bg-emerald-100 text-emerald-800' };
+  if (f.severity === 'VIOLATION')
+    return { label: 'violation', card: 'bg-amber-50/50 border-amber-200', badge: 'bg-amber-100 text-amber-800' };
+  if (f.severity === 'INFO') return { label: 'n/a', card: 'bg-slate-50 border-slate-200', badge: 'bg-slate-200 text-slate-700' };
+  return { label: 'needs review', card: 'bg-blue-50/40 border-blue-200', badge: 'bg-blue-100 text-blue-800' };
+}
+
+const ORDER: Record<string, number> = { violation: 0, 'needs review': 1, pass: 2, 'n/a': 3 };
 
 interface SpanDetailDrawerProps {
   span: ParsedSpan | null;
@@ -46,7 +59,10 @@ export const SpanDetailDrawer: React.FC<SpanDetailDrawerProps> = ({ span, onClos
                 {span.status}
               </span>
             </div>
-            <p className="text-xs text-slate-400 font-mono mt-0.5">span: {span.id}</p>
+            <p className="text-xs text-slate-400 font-mono mt-0.5">
+              span: {span.id}
+              {span.jurisdictionId && <> · rules: {span.jurisdictionId}</>}
+            </p>
           </div>
           <button
             onClick={onClose}
@@ -126,8 +142,40 @@ export const SpanDetailDrawer: React.FC<SpanDetailDrawerProps> = ({ span, onClos
             </div>
           )}
 
-          {/* Violations if present */}
-          {span.violations && span.violations.length > 0 && (
+          {/* Every finding the department returned, with plan evidence and the city rule */}
+          {span.findings && span.findings.length > 0 && (
+            <div className="space-y-2.5">
+              <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center space-x-1.5">
+                <ListChecks className="h-3.5 w-3.5 text-[#0071e3]" />
+                <span>Rule Findings ({span.findings.length})</span>
+              </h4>
+              <div className="space-y-2">
+                {[...span.findings]
+                  .sort((a, b) => ORDER[findingTone(a).label] - ORDER[findingTone(b).label])
+                  .map((f) => {
+                    const tone = findingTone(f);
+                    return (
+                      <div key={f.rule_id} className={`p-3.5 rounded-2xl border text-slate-800 shadow-xs ${tone.card}`}>
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="font-mono text-[11px] font-bold text-slate-700">
+                            {f.rule_id}
+                            {f.rule_name && <span className="font-sans font-semibold text-slate-500"> · {f.rule_name}</span>}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono uppercase font-bold shrink-0 ${tone.badge}`}>
+                            {tone.label}
+                          </span>
+                        </div>
+                        <p className="leading-relaxed font-medium">{f.message}</p>
+                        <FindingEvidence evidence={f.evidence} ruleSources={f.rule_sources} />
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+
+          {/* Violations if present (fixture traces carry these without findings) */}
+          {(!span.findings || span.findings.length === 0) && span.violations && span.violations.length > 0 && (
             <div className="space-y-2.5">
               <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wider flex items-center space-x-1.5">
                 <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
@@ -143,6 +191,7 @@ export const SpanDetailDrawer: React.FC<SpanDetailDrawerProps> = ({ span, onClos
                       {v.rule_id}
                     </span>
                     <p className="text-slate-800 leading-relaxed font-medium">{v.message}</p>
+                    <FindingEvidence evidence={v.evidence} ruleSources={v.rule_sources} />
                   </div>
                 ))}
               </div>

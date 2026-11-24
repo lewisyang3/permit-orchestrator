@@ -5,9 +5,9 @@ Estimated Cost: $210,000 USD
 
 Property Location:
 Address: 104 Main Street
-City: Metropolis
-State: NY
-Zip: 10001
+City: San Jose
+State: CA
+Zip: 95113
 
 Applicant Information:
 Name: Gordon Ramsay

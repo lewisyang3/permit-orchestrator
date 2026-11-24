@@ -7,6 +7,7 @@ import { ConsensusBanner } from './components/ConsensusBanner';
 import { TraceWaterfall } from './components/TraceWaterfall';
 import { SpanDetailDrawer } from './components/SpanDetailDrawer';
 import { PermitForm } from './components/PermitForm';
+import { EvidenceProvider } from './components/EvidenceContext';
 import { FaultControlPanel } from './components/FaultControlPanel';
 import { FIXTURE_SCENARIOS, FixtureScenario } from './fixtures';
 import { parseTraceEvents, ParsedSpan } from './utils/traceParser';
@@ -268,6 +269,7 @@ export const App: React.FC = () => {
   };
 
   return (
+    <EvidenceProvider documentId={currentPermit.source_document_id}>
     <div
       className="min-h-screen text-[#1c1d21] flex flex-col antialiased selection:bg-[#1c1d21]/20 selection:text-[#1c1d21]"
       style={{
@@ -491,6 +493,7 @@ export const App: React.FC = () => {
         </div>
       </footer>
     </div>
+    </EvidenceProvider>
   );
 };
 

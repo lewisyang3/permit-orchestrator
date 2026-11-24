@@ -4,6 +4,35 @@
   "title": "Permit",
   "description": "Standardized building permit application payload submitted to Permit Orchestrator",
   "type": "object",
+  "definitions": {
+    "EvidenceSpan": {
+      "type": "object",
+      "description": "Where one extracted value appears in the uploaded document. verified: the server found this text in the document. unverified: it could not; check by hand.",
+      "required": ["field_path", "quote", "status", "method"],
+      "properties": {
+        "field_path": { "type": "string" },
+        "quote": { "type": "string" },
+        "page": { "type": ["integer", "null"], "minimum": 1 },
+        "line": { "type": ["integer", "null"], "minimum": 1 },
+        "bboxes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["x0", "top", "x1", "bottom"],
+            "properties": {
+              "x0": { "type": "number" },
+              "top": { "type": "number" },
+              "x1": { "type": "number" },
+              "bottom": { "type": "number" }
+            }
+          }
+        },
+        "status": { "type": "string", "enum": ["verified", "unverified"] },
+        "value_supported": { "type": ["boolean", "null"] },
+        "method": { "type": "string", "enum": ["gemini", "deterministic"] }
+      }
+    }
+  },
   "required": [
     "project_title",
     "property_address",
@@ -17,6 +46,15 @@
     "permit_id": {
       "type": ["string", "null"],
       "description": "Unique permit identifier (UUID or assigned slug like pm-2026-001)"
+    },
+    "source_document_id": {
+      "type": ["string", "null"],
+      "description": "Uploaded plan this permit was read from (GET /intake/documents/{id})"
+    },
+    "evidence": {
+      "type": "object",
+      "description": "Where each value appears in the uploaded document, keyed by field path",
+      "additionalProperties": { "$ref": "#/definitions/EvidenceSpan" }
     },
     "project_title": {
       "type": "string",

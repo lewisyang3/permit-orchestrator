@@ -20,12 +20,25 @@ from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import FileResponse
 from pydantic import ValidationError
 
+from contract.normalize import normalize_state
+from orchestrator.pdf_text import (
+    DocumentText,
+    PageText,
+    extract_pdf,
+    line_at,
+    locate_quote,
+    text_document,
+    value_in_quote,
+)
 from contract.models import (
     Applicant,
     ApplicantRole,
+    BBox,
     ConstructionType,
+    EvidenceSpan,
     FireData,
     FoundationType,
     IntakeParseRequest,
@@ -93,9 +106,9 @@ Estimated Cost: $85,000 USD
 
 Property Location:
 Address: 742 Evergreen Terrace
-City: Springfield
-State: OR
-Zip: 97477
+City: San Jose
+State: CA
+Zip: 95125
 
 Applicant Information:
 Name: Homer Simpson
@@ -147,9 +160,9 @@ Estimated Cost: $210,000 USD
 
 Property Location:
 Address: 104 Main Street
-City: Metropolis
-State: NY
-Zip: 10001
+City: San Jose
+State: CA
+Zip: 95113
 
 Applicant Information:
 Name: Gordon Ramsay
@@ -200,9 +213,9 @@ Estimated Cost: $650,000 USD
 
 Property Location:
 Address: 4800 Industrial Parkway
-City: Columbus
-State: OH
-Zip: 43228
+City: San Jose
+State: CA
+Zip: 95131
 
 Applicant Information:
 Name: Bruce Wayne
@@ -299,32 +312,6 @@ def _clean_bool(val: Any) -> Optional[bool]:
     return None
 
 
-_US_STATES: Dict[str, str] = {
-    "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR", "california": "CA",
-    "colorado": "CO", "connecticut": "CT", "delaware": "DE", "district of columbia": "DC",
-    "florida": "FL", "georgia": "GA", "hawaii": "HI", "idaho": "ID", "illinois": "IL",
-    "indiana": "IN", "iowa": "IA", "kansas": "KS", "kentucky": "KY", "louisiana": "LA",
-    "maine": "ME", "maryland": "MD", "massachusetts": "MA", "michigan": "MI", "minnesota": "MN",
-    "mississippi": "MS", "missouri": "MO", "montana": "MT", "nebraska": "NE", "nevada": "NV",
-    "new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM", "new york": "NY",
-    "north carolina": "NC", "north dakota": "ND", "ohio": "OH", "oklahoma": "OK", "oregon": "OR",
-    "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC", "south dakota": "SD",
-    "tennessee": "TN", "texas": "TX", "utah": "UT", "vermont": "VT", "virginia": "VA",
-    "washington": "WA", "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY",
-}
-_US_STATE_CODES = frozenset(_US_STATES.values())
-
-
-def _normalize_state(val: Optional[str]) -> Optional[str]:
-    """Map a state name or code to its two-letter USPS code; None if unrecognized."""
-    if not val:
-        return None
-    s = re.sub(r"\s+", " ", val.strip().rstrip(".")).lower()
-    if s.upper() in _US_STATE_CODES:
-        return s.upper()
-    return _US_STATES.get(s)
-
-
 def _normalize_token(val: str) -> str:
     """Lowercase and collapse whitespace/hyphens to underscores for enum matching."""
     return re.sub(r"[\s-]+", "_", val.strip().lower())
@@ -365,7 +352,7 @@ def validate_extracted_permit_dict(
         addr_raw = {}
     street = _clean_str(_first(addr_raw, "street", "address"))
     city = _clean_str(addr_raw.get("city"))
-    state = _normalize_state(_clean_str(addr_raw.get("state")))
+    state = normalize_state(_clean_str(addr_raw.get("state")))
     zip_code = _clean_str(_first(addr_raw, "zip", "zip_code"))
 
     if not street:
@@ -642,6 +629,40 @@ def _extract_text_from_pdf_stream(pdf_bytes: bytes) -> str:
         return ""
 
 
+def _is_pdf(head: bytes) -> bool:
+    """Whether the bytes start (after whitespace) with the PDF marker."""
+    return head.lstrip()[:5] == b"%PDF-"
+
+
+def load_document(
+    content_text: Optional[str],
+    content_bytes: Optional[bytes],
+) -> DocumentText:
+    """Read an upload into page-aware text.
+
+    kind "pdf": real per-page text and word positions, so citations can be verified.
+    kind "text": a plain-text upload (line numbers, no pages).
+    kind "raw": a PDF without a readable text layer (scanned, or not parseable). Its
+    text is a best-effort scrape for the regex parser and cannot verify citations.
+    """
+    if content_text:
+        return text_document(content_text)
+    if not content_bytes:
+        return text_document("")
+    if _is_pdf(content_bytes):
+        try:
+            doc = extract_pdf(content_bytes)
+            if doc.has_text_layer:
+                return doc
+        except Exception as err:
+            logger.warning("pdfplumber could not read the PDF (%s); using raw stream text.", err)
+        return DocumentText(pages=[PageText(page=None, text=_extract_text_from_pdf_stream(content_bytes))], kind="raw")
+    try:
+        return text_document(content_bytes.decode("utf-8"))
+    except UnicodeDecodeError:
+        return DocumentText(pages=[PageText(page=None, text=_extract_text_from_pdf_stream(content_bytes))], kind="raw")
+
+
 def deterministic_plan_parse(
     content_text: Optional[str],
     filename: str,
@@ -652,10 +673,18 @@ def deterministic_plan_parse(
     Does not fabricate missing fields: raises MissingFieldsError if any mandatory
     field is absent or cannot be extracted.
     """
+    permit, warnings, _ = deterministic_parse_document(load_document(content_text, content_bytes), filename)
+    return permit, warnings
+
+
+def deterministic_parse_document(
+    doc: DocumentText,
+    filename: str,
+) -> Tuple[Permit, List[str], Dict[str, str]]:
+    """Regex-parse a document. Also returns, per field path, the source line it read."""
     warnings: List[str] = []
-    text = content_text or ""
-    if not text and content_bytes:
-        text = _extract_text_from_pdf_stream(content_bytes)
+    text = doc.full_text
+    quotes: Dict[str, str] = {}
 
     if not text.strip():
         raise MissingFieldsError(
@@ -663,65 +692,78 @@ def deterministic_plan_parse(
             message=f"No readable text could be extracted from {filename}.",
         )
 
-    # Helper regex extractors
-    def _find(pattern: str) -> Optional[str]:
+    # Helper regex extractor: records the whole source line holding each value.
+    def _find(pattern: str, path: str) -> Optional[str]:
         m = re.search(pattern, text, re.IGNORECASE)
-        return m.group(1).strip() if m else None
+        if not m:
+            return None
+        quotes[path] = line_at(text, m.start(1), m.end(1))
+        return m.group(1).strip()
 
     # 1. Project Title & Description
-    title = _find(r"Project Title:\s*(.*)")
-    description = _find(r"Project Description:\s*(.*)")
-    estimated_cost = _find(r"Estimated Cost:?\s*\$?([0-9,.]+)")
+    title = _find(r"Project Title:\s*(.*)", "project_title")
+    description = _find(r"Project Description:\s*(.*)", "project_description")
+    estimated_cost = _find(r"Estimated Cost:?\s*\$?([0-9,.]+)", "estimated_cost_usd")
 
     # 2. Property Address
-    street = _find(r"Address:\s*(.*)")
-    city = _find(r"City:\s*(.*)")
-    state = _find(r"\bState:\s*(.+)")
-    zip_code = _find(r"Zip(?: Code)?:\s*([0-9]{5})")
+    street = _find(r"Address:\s*(.*)", "property_address.street")
+    city = _find(r"City:\s*(.*)", "property_address.city")
+    state = _find(r"\bState:\s*(.+)", "property_address.state")
+    zip_code = _find(r"Zip(?: Code)?:\s*([0-9]{5})", "property_address.zip")
 
     # If street contains full address like "123 Main St, City, ST 12345"
     if street and (not city or not state or not zip_code):
         addr_match = re.search(r"^(.*?),\s*([A-Za-z\s]+),\s*([A-Za-z]{2})\s+([0-9]{5})$", street)
         if addr_match:
+            street_line = quotes["property_address.street"]
+            for path, have in (("property_address.city", city), ("property_address.state", state),
+                               ("property_address.zip", zip_code)):
+                if not have:
+                    quotes[path] = street_line
             street = addr_match.group(1).strip()
             city = city or addr_match.group(2).strip()
             state = state or addr_match.group(3).strip().upper()
             zip_code = zip_code or addr_match.group(4).strip()
 
     # 3. Applicant
-    applicant_name = _find(r"Applicant Information:[\s\S]*?Name:\s*(.*)") or _find(r"Name:\s*(.*)")
-    role_str = _find(r"Role:\s*(.+)")
-    applicant_email = _find(r"Email:\s*([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)")
-    applicant_phone = _find(r"Phone:\s*([0-9() -]+)")
+    applicant_name = _find(r"Applicant Information:[\s\S]*?Name:\s*(.*)", "applicant.name") or _find(r"Name:\s*(.*)", "applicant.name")
+    role_str = _find(r"Role:\s*(.+)", "applicant.role")
+    applicant_email = _find(r"Email:\s*([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)", "applicant.email")
+    applicant_phone = _find(r"Phone:\s*([0-9() -]+)", "applicant.phone")
 
     # 4. Zoning
-    zone_str = _find(r"Zone(?: District)?:\s*([a-zA-Z0-9-]+)")
-    building_height = _find(r"Building Height:\s*([0-9.]+)")
-    lot_area = _find(r"Lot Area:\s*([0-9,.]+)")
-    footprint = _find(r"(?:Proposed Total Footprint|Proposed Footprint|Footprint):\s*([0-9,.]+)")
-    setback_front = _find(r"Front Setback:\s*([0-9.]+)")
-    setback_rear = _find(r"Rear Setback:\s*([0-9.]+)")
-    setback_side = _find(r"Side Setback:\s*([0-9.]+)")
+    zone_str = _find(r"Zone(?: District)?:\s*([a-zA-Z0-9-]+)", "zoning.zone_code")
+    building_height = _find(r"Building Height:\s*([0-9.]+)", "zoning.building_height_ft")
+    lot_area = _find(r"Lot Area:\s*([0-9,.]+)", "zoning.lot_area_sqft")
+    # Prefer the proposed total; a bare "Footprint:" label is the fallback, "Existing Footprint" never counts.
+    footprint = (
+        _find(r"Proposed Total Footprint:\s*([0-9,.]+)", "zoning.building_footprint_sqft")
+        or _find(r"Proposed Footprint:\s*([0-9,.]+)", "zoning.building_footprint_sqft")
+        or _find(r"(?<!Existing )(?<!Proposed )\bFootprint:\s*([0-9,.]+)", "zoning.building_footprint_sqft")
+    )
+    setback_front = _find(r"Front Setback:\s*([0-9.]+)", "zoning.setback_front_ft")
+    setback_rear = _find(r"Rear Setback:\s*([0-9.]+)", "zoning.setback_rear_ft")
+    setback_side = _find(r"Side Setback:\s*([0-9.]+)", "zoning.setback_side_ft")
 
     # 5. Fire
-    occ_str = _find(r"Occupancy Type:\s*([a-zA-Z]+)")
-    occupant_load = _find(r"Occupant Load:\s*([0-9]+)")
-    has_sprinklers = _find(r"(?:Automatic Sprinklers|Sprinkler System|Sprinklers):\s*(yes|true|no|false|present|none|not required)")
-    egress_exits = _find(r"Egress Exits(?: Count)?:\s*([0-9]+)")
-    dist_hydrant = _find(r"Distance to (?:Nearest )?Fire Hydrant:\s*([0-9.]+)")
-    has_alarm = _find(r"Fire Alarm(?: System)?:\s*(yes|true|no|false|present|none)")
+    occ_str = _find(r"Occupancy Type:\s*([a-zA-Z]+)", "fire.occupancy_type")
+    occupant_load = _find(r"Occupant Load:\s*([0-9]+)", "fire.occupant_load")
+    has_sprinklers = _find(r"(?:Automatic Sprinklers|Sprinkler System|Sprinklers):\s*(yes|true|no|false|present|none|not required)", "fire.has_sprinkler_system")
+    egress_exits = _find(r"Egress Exits(?: Count)?:\s*([0-9]+)", "fire.egress_exits_count")
+    dist_hydrant = _find(r"Distance to (?:Nearest )?Fire Hydrant:\s*([0-9.]+)", "fire.distance_to_hydrant_ft")
+    has_alarm = _find(r"Fire Alarm(?: System)?:\s*(yes|true|no|false|present|none)", "fire.has_fire_alarm")
 
     # 6. Water
-    water_meter = _find(r"Water (?:Service )?Meter Size:\s*([0-9.]+)")
-    daily_water = _find(r"Estimated Daily Water Usage:\s*([0-9,.]+)")
-    has_backflow = _find(r"Backflow Preventer (?:Installed)?:\s*(yes|true|no|false)")
-    has_stormwater = _find(r"Stormwater (?:Management )?Plan:\s*(yes|true|no|false)")
+    water_meter = _find(r"Water (?:Service )?Meter Size:\s*([0-9.]+)", "water.water_meter_size_inches")
+    daily_water = _find(r"Estimated Daily Water Usage:\s*([0-9,.]+)", "water.daily_water_usage_gpd")
+    has_backflow = _find(r"Backflow Preventer (?:Installed)?:\s*(yes|true|no|false)", "water.has_backflow_preventer")
+    has_stormwater = _find(r"Stormwater (?:Management )?Plan:\s*(yes|true|no|false)", "water.has_stormwater_plan")
 
     # 7. Structural
-    stories = _find(r"Stories:\s*([0-9]+)")
-    framing_str = _find(r"Framing Construction:\s*(.+)")
-    seismic_str = _find(r"Seismic Design Category:\s*([A-E])")
-    foundation_str = _find(r"Foundation Type:\s*(.+)")
+    stories = _find(r"Stories:\s*([0-9]+)", "structural.stories_count")
+    framing_str = _find(r"Framing Construction:\s*(.+)", "structural.construction_type")
+    seismic_str = _find(r"Seismic Design Category:\s*([A-E])", "structural.seismic_design_category")
+    foundation_str = _find(r"Foundation Type:\s*(.+)", "structural.foundation_type")
 
     raw_dict = {
         "project_title": title,
@@ -771,7 +813,126 @@ def deterministic_plan_parse(
     }
 
     permit = validate_extracted_permit_dict(raw_dict)
-    return permit, warnings
+    return permit, warnings, quotes
+
+
+# -------------------------------------------------------------------------
+# Evidence: verify where each value appears in the uploaded document
+# -------------------------------------------------------------------------
+
+_NON_EVIDENCE_FIELDS = {"permit_id", "evidence", "source_document_id"}
+
+
+def _leaf_values(permit: Permit) -> Dict[str, Any]:
+    """Flatten a permit to {"zoning.setback_front_ft": 25.0, ...} for non-null values."""
+    out: Dict[str, Any] = {}
+
+    def walk(prefix: str, val: Any) -> None:
+        if isinstance(val, dict):
+            for k, v in val.items():
+                walk(f"{prefix}.{k}" if prefix else k, v)
+        elif val is not None:
+            out[prefix] = val
+
+    walk("", permit.model_dump(mode="json", exclude=_NON_EVIDENCE_FIELDS))
+    return out
+
+
+def _parse_evidence_claims(raw: Any) -> Dict[str, Tuple[str, Optional[int]]]:
+    """Read Gemini's {"field.path": {"quote": str, "page": int}} block, skipping malformed entries."""
+    claims: Dict[str, Tuple[str, Optional[int]]] = {}
+    if not isinstance(raw, dict):
+        return claims
+    for path, item in raw.items():
+        if not isinstance(path, str) or not isinstance(item, dict):
+            continue
+        quote = item.get("quote")
+        if not isinstance(quote, str) or not quote.strip():
+            continue
+        page = item.get("page")
+        page = page if isinstance(page, int) and not isinstance(page, bool) and page > 0 else None
+        claims[path] = (quote.strip(), page)
+    return claims
+
+
+def build_evidence(
+    permit: Permit,
+    doc: DocumentText,
+    claims: Dict[str, Tuple[str, Optional[int]]],
+    method: str,
+) -> Tuple[Dict[str, EvidenceSpan], List[str]]:
+    """Check each extracted value's cited text against the document itself.
+
+    A citation is "verified" only when its text is found in the document; the stored
+    quote is then the document's own text and its word boxes. Otherwise it stays
+    "unverified" with the parser's claim, and a warning tells the worker to check it.
+    """
+    evidence: Dict[str, EvidenceSpan] = {}
+    warnings: List[str] = []
+    not_found: List[str] = []
+    uncited: List[str] = []
+    unsupported: List[str] = []
+    can_verify = doc.kind != "raw" and doc.has_text_layer
+    pages = {p.page: p for p in doc.pages}
+
+    for path, value in _leaf_values(permit).items():
+        quote, page_hint = claims.get(path, ("", None))
+        if not quote:
+            uncited.append(path)
+            continue
+        loc = locate_quote(doc, quote, page_hint) if can_verify else None
+        if loc is None:
+            if can_verify:
+                not_found.append(path)
+            evidence[path] = EvidenceSpan(
+                # A text document has no pages: drop the parser's page hint so the
+                # citation isn't shown on a page that doesn't exist.
+                field_path=path, quote=quote, page=page_hint if doc.kind != "text" else None,
+                status="unverified",
+                value_supported=value_in_quote(value, quote), method=method,
+            )
+        else:
+            source = pages[loc.page].text[loc.char_start:loc.char_end]
+            evidence[path] = EvidenceSpan(
+                field_path=path, quote=source, page=loc.page, line=loc.line,
+                bboxes=[BBox(x0=b[0], top=b[1], x1=b[2], bottom=b[3]) for b in loc.bboxes],
+                status="verified", value_supported=value_in_quote(value, source), method=method,
+            )
+        # Only text actually found in the document can be judged; unverified quotes are flagged above.
+        if evidence[path].status == "verified" and evidence[path].value_supported is False:
+            unsupported.append(path)
+
+    if not can_verify and evidence:
+        warnings.append(
+            "The document has no readable text layer (scanned or image-only), so no citation "
+            "could be checked against it. Verify every value by hand."
+        )
+    if not_found:
+        warnings.append(
+            "Cited text was not found in the document for: " + ", ".join(not_found) + ". Verify these by hand."
+        )
+    if uncited:
+        warnings.append("No source text was cited for: " + ", ".join(uncited) + ". Verify these by hand.")
+    if unsupported:
+        warnings.append(
+            "The cited text does not state the extracted value for: " + ", ".join(unsupported) + ". Check these."
+        )
+    return evidence, warnings
+
+
+def _attach_evidence(
+    permit: Permit,
+    doc: DocumentText,
+    claims: Dict[str, Tuple[str, Optional[int]]],
+    method: str,
+    document_id: Optional[str],
+    warnings: List[str],
+) -> Permit:
+    evidence, ev_warnings = build_evidence(permit, doc, claims, method)
+    permit.evidence = evidence
+    permit.source_document_id = document_id
+    warnings.extend(ev_warnings)
+    return permit
 
 
 # -------------------------------------------------------------------------
@@ -834,8 +995,19 @@ You MUST respond strictly with a valid JSON object matching the following struct
     "seismic_design_category": "A" | "B" | "C" | "D" | "E" | null,
     "foundation_type": "slab_on_grade" | "crawlspace" | "continuous_spread_footing" | "deep_pile" | null
   },
-  "missing_fields": ["array of missing field path strings"]
+  "missing_fields": ["array of missing field path strings"],
+  "evidence": {
+    "<field path, e.g. zoning.setback_front_ft>": {"quote": "exact text from the document", "page": 1}
+  }
 }
+
+EVIDENCE (a reviewer uses this to check every value against the document):
+- Add one "evidence" entry for every field whose value is not null, keyed by its dotted path
+  (e.g. "property_address.city", "fire.occupant_load").
+- "quote" must be copied character-for-character from the document: the label and value as printed,
+  e.g. "FRONT SETBACK: 18'-0\"". Never paraphrase, translate, or combine text from different places.
+- "page" is the 1-based page number where the quote appears (null for text documents).
+- If a value comes from a drawing or image with no selectable text, still quote what is printed there.
 
 Do not include markdown code fences (```json ... ```) in your output. Return raw JSON only.
 """
@@ -951,12 +1123,12 @@ def _parse_gemini_json_response(raw_json: Dict[str, Any]) -> Dict[str, Any]:
 
 def _recover_missing_with_deterministic(
     gemini_err: MissingFieldsError,
-    content_text: Optional[str],
+    doc: DocumentText,
     filename: str,
-    content_bytes: Optional[bytes],
     permit_id: str,
     warnings: List[str],
     file_path: Optional[str],
+    document_id: Optional[str],
 ) -> Tuple[Permit, str, List[str], Optional[str]]:
     """Retry a Gemini extraction that missed fields with the deterministic parser.
 
@@ -965,7 +1137,7 @@ def _recover_missing_with_deterministic(
     when the two parsers missed disjoint fields).
     """
     try:
-        permit, fb_warnings = deterministic_plan_parse(content_text, filename, content_bytes)
+        permit, fb_warnings, quotes = deterministic_parse_document(doc, filename)
     except MissingFieldsError as fb_err:
         fb_missing = set(fb_err.missing_fields)
         both = [f for f in gemini_err.missing_fields if f in fb_missing]
@@ -985,6 +1157,7 @@ def _recover_missing_with_deterministic(
         "deterministic parser recovered them."
     )
     warnings.extend(fb_warnings)
+    _attach_evidence(permit, doc, {k: (v, None) for k, v in quotes.items()}, "deterministic", document_id, warnings)
     return permit, "deterministic_fallback", warnings, file_path
 
 
@@ -1014,7 +1187,9 @@ async def parse_plan_document(
         mt = "text/plain"
 
     file_path: Optional[str] = None
+    document_id: Optional[str] = None  # set once the upload is saved and can be served back
     permit_id = f"pm-intake-{uuid4().hex[:8]}"
+    doc = load_document(content_text, content_bytes)
 
     if save_upload:
         try:
@@ -1027,6 +1202,7 @@ async def parse_plan_document(
             elif content_text:
                 target_path.write_text(content_text, encoding="utf-8")
             file_path = str(target_path)
+            document_id = permit_id
         except Exception as err:
             logger.warning("Could not persist upload to disk: %s", err)
             warnings.append(f"Upload disk caching failed: {err}")
@@ -1052,6 +1228,8 @@ async def parse_plan_document(
                 warnings.append(f"Configured model {model} unavailable; used {model_used}.")
             extracted_dict = _parse_gemini_json_response(raw_response)
             permit = validate_extracted_permit_dict(extracted_dict, permit_id=permit_id)
+            claims = _parse_evidence_claims(extracted_dict.get("evidence"))
+            _attach_evidence(permit, doc, claims, "gemini", document_id, warnings)
             return permit, model_used, warnings, file_path
         except InvalidFieldsError:
             # Gemini read values that fail model validation: report them, don't mask them.
@@ -1060,16 +1238,17 @@ async def parse_plan_document(
             # Gemini left required fields empty. The deterministic parser only succeeds
             # when every required field is literally present, so trying it invents nothing.
             return _recover_missing_with_deterministic(
-                gemini_err, content_text, filename, content_bytes, permit_id, warnings, file_path
+                gemini_err, doc, filename, permit_id, warnings, file_path, document_id
             )
         except Exception as err:
             logger.warning("Gemini intake extraction failed (%s). Falling back to deterministic parser.", err)
             warnings.append(f"Gemini API extraction failed: {err}; fell back to deterministic parser.")
 
     # Fallback Path: Deterministic parser
-    permit, fb_warnings = deterministic_plan_parse(content_text, filename, content_bytes)
+    permit, fb_warnings, quotes = deterministic_parse_document(doc, filename)
     permit.permit_id = permit_id
     warnings.extend(fb_warnings)
+    _attach_evidence(permit, doc, {k: (v, None) for k, v in quotes.items()}, "deterministic", document_id, warnings)
     return permit, "deterministic_fallback", warnings, file_path
 
 
@@ -1134,7 +1313,53 @@ async def parse_intake_plan(req: IntakeParseRequest) -> IntakeParseResponse:
         file_path=file_path,
         extracted_by=extracted_by,
         warnings=warnings,
+        document_id=permit.source_document_id,
     )
+
+
+_DOCUMENT_ID = re.compile(r"^pm-intake-[0-9a-f]{8}$")
+_DOCUMENT_TYPES = {".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg",
+                   ".jpeg": "image/jpeg", ".txt": "text/plain", ".md": "text/markdown"}
+_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
+
+
+def _media_type(path: Path) -> str:
+    """The served type, decided from the contents first, the same way load_document reads them.
+
+    The extension alone isn't enough: an upload named "Plan Set" may still be a PDF that was
+    parsed (and its citations verified) as one, and the viewer picks its renderer from this type.
+    """
+    with path.open("rb") as fh:
+        head = fh.read(1024)
+    if _is_pdf(head):
+        return "application/pdf"
+    suffix = path.suffix.lower()
+    if suffix in _IMAGE_SUFFIXES:
+        return _DOCUMENT_TYPES[suffix]
+    try:
+        path.read_bytes().decode("utf-8")
+    except UnicodeDecodeError:
+        return "application/octet-stream"
+    return "text/markdown; charset=utf-8" if suffix == ".md" else "text/plain; charset=utf-8"
+
+
+@router.get(
+    "/documents/{document_id}",
+    summary="Download an uploaded plan so a reviewer can check its cited evidence",
+    response_class=FileResponse,
+)
+async def get_intake_document(document_id: str) -> FileResponse:
+    """Serve the saved upload for a permit's source_document_id."""
+    if not _DOCUMENT_ID.match(document_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    matches = sorted(UPLOADS_DIR.glob(f"{document_id}_*"))
+    if not matches or not matches[0].is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    path = matches[0]
+    media_type = _media_type(path)
+    # inline so the browser (and pdf.js) can display it rather than download it
+    return FileResponse(path, media_type=media_type,
+                        headers={"Content-Disposition": f'inline; filename="{path.name[len(document_id) + 1:]}"'})
 
 
 @router.get(

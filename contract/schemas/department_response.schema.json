@@ -20,6 +20,14 @@
       "type": "string",
       "enum": ["zoning", "fire", "water", "structural"]
     },
+    "jurisdiction_id": {
+      "type": ["string", "null"],
+      "description": "City rule pack the permit was evaluated against, e.g. ca-san-jose"
+    },
+    "rule_set_id": {
+      "type": ["string", "null"],
+      "description": "rule_set_id of that department pack"
+    },
     "status": {
       "type": "string",
       "enum": ["APPROVED", "REJECTED"],
@@ -40,7 +48,17 @@
           "rule_name": { "type": "string" },
           "passed": { "type": "boolean" },
           "severity": { "type": "string", "enum": ["VIOLATION", "ADVISORY", "INFO"] },
-          "message": { "type": "string", "description": "Explanation of rule evaluation" }
+          "message": { "type": "string", "description": "Explanation of rule evaluation" },
+          "evidence": {
+            "type": "array",
+            "description": "What the applicant's document says for the fields this rule checked",
+            "items": { "$ref": "permit.schema.json#/definitions/EvidenceSpan" }
+          },
+          "rule_sources": {
+            "type": "array",
+            "description": "City sources the rule cites (url, section, printed_page, ...)",
+            "items": { "type": "object" }
+          }
         }
       }
     },

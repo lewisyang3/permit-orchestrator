@@ -76,22 +76,22 @@ def base_permit(base_permit_dict: Dict[str, Any]) -> Permit:
 
 @pytest.fixture
 def zoning_pack() -> Dict[str, Any]:
-    return load_and_validate_rule_pack(Path("rules/zoning.yaml"), DepartmentName.ZONING)
+    return load_and_validate_rule_pack(Path("rules/ca-san-jose/zoning.yaml"), DepartmentName.ZONING)
 
 
 @pytest.fixture
 def fire_pack() -> Dict[str, Any]:
-    return load_and_validate_rule_pack(Path("rules/fire.yaml"), DepartmentName.FIRE)
+    return load_and_validate_rule_pack(Path("rules/ca-san-jose/fire.yaml"), DepartmentName.FIRE)
 
 
 @pytest.fixture
 def water_pack() -> Dict[str, Any]:
-    return load_and_validate_rule_pack(Path("rules/water.yaml"), DepartmentName.WATER)
+    return load_and_validate_rule_pack(Path("rules/ca-san-jose/water.yaml"), DepartmentName.WATER)
 
 
 @pytest.fixture
 def structural_pack() -> Dict[str, Any]:
-    return load_and_validate_rule_pack(Path("rules/structural.yaml"), DepartmentName.STRUCTURAL)
+    return load_and_validate_rule_pack(Path("rules/ca-san-jose/structural.yaml"), DepartmentName.STRUCTURAL)
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +108,7 @@ def structural_pack() -> Dict[str, Any]:
     ],
 )
 def test_all_four_rule_packs_load_and_validate_successfully(dept_name, expected_count):
-    pack = load_and_validate_rule_pack(f"rules/{dept_name.value}.yaml", expected_department=dept_name)
+    pack = load_and_validate_rule_pack(f"rules/ca-san-jose/{dept_name.value}.yaml", expected_department=dept_name)
     assert pack["department"] == dept_name.value
     assert len(pack["rules"]) == expected_count
     assert pack["evaluation_policy"]["allow_final_department_approval_from_this_pack_alone"] is False
@@ -118,7 +118,7 @@ def test_all_yaml_embedded_examples_match_expected_outcomes():
     """Verify all 50 official starter rule examples across all 4 YAML packs evaluate to their expected outcomes."""
     import glob
     total_examples = 0
-    for path in sorted(glob.glob("rules/*.yaml")):
+    for path in sorted(p for p in glob.glob("rules/*/*.yaml") if not p.endswith("city.yaml")):
         pack = load_and_validate_rule_pack(path)
         for rule in pack.get("rules", []):
             for ex in rule.get("examples", []):
@@ -149,7 +149,9 @@ def test_all_four_department_apps_health_and_rules(dept_str, count):
         assert rules_resp.status_code == 200
         data = rules_resp.json()
         assert data["department"] == dept_str
-        assert data["rule_count"] == count
+        [sj] = data["jurisdictions"]
+        assert sj["jurisdiction_id"] == "ca-san-jose"
+        assert sj["rule_count"] == count
         assert data["evaluation_ready"] is True
 
 
@@ -180,10 +182,10 @@ def test_mismatched_department_request_rejected_with_422(base_permit_dict, targe
 @pytest.mark.parametrize(
     "target_dept,wrong_rule_file",
     [
-        ("fire", Path("rules/water.yaml")),
-        ("zoning", Path("rules/fire.yaml")),
-        ("water", Path("rules/structural.yaml")),
-        ("structural", Path("rules/zoning.yaml")),
+        ("fire", Path("rules/ca-san-jose/water.yaml")),
+        ("zoning", Path("rules/ca-san-jose/fire.yaml")),
+        ("water", Path("rules/ca-san-jose/structural.yaml")),
+        ("structural", Path("rules/ca-san-jose/zoning.yaml")),
     ],
 )
 def test_mismatched_rule_pack_file_on_startup_raises_value_error(target_dept, wrong_rule_file):
@@ -859,7 +861,7 @@ def test_malformed_pack_operator_in_requires_collection():
 
 def test_malformed_pack_nonexistent_file():
     with pytest.raises(ValueError, match="Rule pack file not found"):
-        load_and_validate_rule_pack("rules/non_existent.yaml")
+        load_and_validate_rule_pack("rules/ca-san-jose/non_existent.yaml")
 
 
 # ---------------------------------------------------------------------------

@@ -17,6 +17,7 @@ from contract.models import (
     DepartmentName,
     DepartmentStatus,
     EvaluationReason,
+    EvidenceSpan,
     Permit,
     RuleSeverity,
 )
@@ -234,7 +235,20 @@ class RuleEvaluationResult:
     message: str = ""
     severity: RuleSeverity = RuleSeverity.VIOLATION
 
-    def to_evaluation_reason(self) -> EvaluationReason:
+    def evidence_note(self, evidence: Optional[Dict[str, EvidenceSpan]]) -> str:
+        """A caution appended to a FAIL whose plan values haven't been verified in the document."""
+        if self.outcome != EvaluationOutcome.FAIL or not evidence:
+            return ""
+        shaky = [
+            p for p in self.evidence_refs
+            if p in evidence and (evidence[p].status != "verified" or evidence[p].value_supported is False)
+        ]
+        if not shaky:
+            return ""
+        return f" (Source text for {', '.join(shaky)} is unverified; confirm it in the plan before rejecting.)"
+
+    def to_evaluation_reason(self, evidence: Optional[Dict[str, EvidenceSpan]] = None) -> EvaluationReason:
+        """Build the contract reason, with the plan evidence for the fields this rule checked."""
         sev = self.severity
         if self.outcome == EvaluationOutcome.FAIL:
             sev = RuleSeverity.VIOLATION
@@ -245,12 +259,15 @@ class RuleEvaluationResult:
             sev = RuleSeverity.ADVISORY
         elif self.outcome in (EvaluationOutcome.PASS, EvaluationOutcome.NOT_APPLICABLE):
             sev = RuleSeverity.INFO
+        spans = [evidence[p] for p in self.evidence_refs if evidence and p in evidence]
         return EvaluationReason(
             rule_id=self.rule_id,
             rule_name=self.rule_name,
             passed=self.passed,
             severity=sev,
-            message=self.message,
+            message=self.message + self.evidence_note(evidence),
+            evidence=spans,
+            rule_sources=_source_list(self.sources),
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -273,6 +290,20 @@ class RuleEvaluationResult:
         }
 
 
+def _source_list(sources: Any) -> List[Dict[str, Any]]:
+    """Rule pack "source" entries as a list of dicts (strings become {"section": ...})."""
+    if not sources:
+        return []
+    items = sources if isinstance(sources, list) else [sources]
+    out: List[Dict[str, Any]] = []
+    for item in items:
+        if isinstance(item, dict):
+            out.append({k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in item.items()})
+        elif item is not None:
+            out.append({"section": str(item)})
+    return out
+
+
 @dataclass
 class DepartmentEvaluationReport:
     """Aggregated department evaluation outcome and findings."""
@@ -287,6 +318,7 @@ class DepartmentEvaluationReport:
     unresolved_reasons: List[EvaluationReason]
     violations: List[RuleEvaluationResult]
     summary_message: str
+    evidence: Dict[str, EvidenceSpan] = field(default_factory=dict)
 
     def apply_explanations(self, explanations: Dict[str, str]) -> None:
         """Update findings and reasons with Gemini explanations when provided."""
@@ -298,10 +330,11 @@ class DepartmentEvaluationReport:
             if finding.rule_id in explanations:
                 text = explanations[finding.rule_id]
                 finding.message = text
+                reason_text = text + finding.evidence_note(self.evidence)
                 if finding.rule_id in reason_map:
-                    reason_map[finding.rule_id].message = text
+                    reason_map[finding.rule_id].message = reason_text
                 if finding.rule_id in unresolved_map:
-                    unresolved_map[finding.rule_id].message = text
+                    unresolved_map[finding.rule_id].message = reason_text
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -411,6 +444,71 @@ def map_permit_to_facts(permit: Permit) -> Dict[str, Any]:
         )
 
     return facts
+
+
+# Which permit field each permit-backed fact comes from (aliases share a path).
+# Facts not listed (calculations, checklist facts) have no plan evidence of their own.
+FACT_TO_PERMIT_PATH: Dict[str, str] = {
+    "applicant_name": "applicant.name",
+    "applicant_role": "applicant.role",
+    "applicant_email": "applicant.email",
+    "applicant_phone": "applicant.phone",
+    "property_address_street": "property_address.street",
+    "property_address_city": "property_address.city",
+    "property_address_state": "property_address.state",
+    "property_address_zip": "property_address.zip",
+    "project_title": "project_title",
+    "project_description": "project_description",
+    "estimated_cost_usd": "estimated_cost_usd",
+    "zone_code": "zoning.zone_code",
+    "building_height_ft": "zoning.building_height_ft",
+    "lot_area_sqft": "zoning.lot_area_sqft",
+    "building_footprint_sqft": "zoning.building_footprint_sqft",
+    "front_setback_ft": "zoning.setback_front_ft",
+    "setback_front_ft": "zoning.setback_front_ft",
+    "rear_setback_ft": "zoning.setback_rear_ft",
+    "setback_rear_ft": "zoning.setback_rear_ft",
+    "interior_side_setback_ft": "zoning.setback_side_ft",
+    "setback_side_ft": "zoning.setback_side_ft",
+    "occupancy_type": "fire.occupancy_type",
+    "occupant_load": "fire.occupant_load",
+    "has_sprinkler_system": "fire.has_sprinkler_system",
+    "egress_exits_count": "fire.egress_exits_count",
+    "distance_to_hydrant_ft": "fire.distance_to_hydrant_ft",
+    "has_fire_alarm": "fire.has_fire_alarm",
+    "water_meter_size_inches": "water.water_meter_size_inches",
+    "daily_water_usage_gpd": "water.daily_water_usage_gpd",
+    "has_backflow_preventer": "water.has_backflow_preventer",
+    "has_stormwater_plan": "water.has_stormwater_plan",
+    "stormwater_control_plan_submitted": "water.has_stormwater_plan",
+    "stories_count": "structural.stories_count",
+    "construction_type": "structural.construction_type",
+    "seismic_design_category": "structural.seismic_design_category",
+    "foundation_type": "structural.foundation_type",
+}
+
+
+def rule_fact_fields(rule: Dict[str, Any]) -> List[str]:
+    """Every fact a rule reads: applies_when, case conditions and checks, in order."""
+    seen: List[str] = []
+    conds = list(rule.get("applies_when", []))
+    for case in rule.get("requirement", {}).get("cases", []):
+        conds += case.get("when", []) + case.get("checks", [])
+    for cond in conds:
+        f = cond.get("field")
+        if f and f not in seen:
+            seen.append(f)
+    return seen
+
+
+def rule_evidence_paths(rule: Dict[str, Any]) -> List[str]:
+    """Permit field paths whose plan evidence bears on this rule."""
+    paths: List[str] = []
+    for fact in rule_fact_fields(rule):
+        path = FACT_TO_PERMIT_PATH.get(fact)
+        if path and path not in paths:
+            paths.append(path)
+    return paths
 
 
 def get_mapped_and_missing_facts(
@@ -1006,6 +1104,8 @@ def evaluate_department(
         finding = evaluate_rule(
             rule, combined_facts, inventory=inv, evidence_refs=evidence_refs
         )
+        if permit is not None and not finding.evidence_refs:
+            finding.evidence_refs = rule_evidence_paths(rule)
         findings.append(finding)
 
     violations = [f for f in findings if f.outcome == EvaluationOutcome.FAIL]
@@ -1021,9 +1121,12 @@ def evaluate_department(
         if f.outcome in (EvaluationOutcome.PASS, EvaluationOutcome.NOT_APPLICABLE)
     ]
 
-    all_reasons = [f.to_evaluation_reason() for f in findings]
-    violation_reasons = [f.to_evaluation_reason() for f in violations]
-    unresolved_reasons = [f.to_evaluation_reason() for f in unresolved]
+    plan_evidence = dict(permit.evidence) if permit is not None else {}
+    all_reasons = [f.to_evaluation_reason(plan_evidence) for f in findings]
+    by_id = {r.rule_id: r for r in all_reasons}
+    # Share reason objects so explanation rewrites reach every list a reason appears in.
+    violation_reasons = [by_id[f.rule_id] for f in violations]
+    unresolved_reasons = [by_id[f.rule_id] for f in unresolved]
 
     # Aggregation logic:
     # 1. Any check is FAIL -> REJECTED
@@ -1075,4 +1178,5 @@ def evaluate_department(
         unresolved_reasons=unresolved_reasons,
         violations=violations,
         summary_message=summary,
+        evidence=plan_evidence,
     )

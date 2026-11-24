@@ -6,7 +6,7 @@ Source of truth for Orchestrator (Person A) and Department Services (Person B).
 from __future__ import annotations
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field, field_serializer
 
 
@@ -167,6 +167,32 @@ class StructuralData(BaseModel):
     foundation_type: FoundationType
 
 
+class BBox(BaseModel):
+    """A highlight rectangle in PDF points, origin at the page's top-left corner."""
+    x0: float
+    top: float
+    x1: float
+    bottom: float
+
+
+class EvidenceSpan(BaseModel):
+    """Where one extracted permit value appears in the uploaded document.
+
+    status "verified" means the server found the text in the document itself and
+    quote is the document's own text there. "unverified" means it could not (the
+    parser's quote isn't in the text, or the PDF has no text layer): quote is then
+    what the parser claimed, and the worker must check the value by hand.
+    """
+    field_path: str                     # e.g. "zoning.setback_front_ft"
+    quote: str
+    page: Optional[int] = None          # 1-based PDF page; None for text uploads
+    line: Optional[int] = None          # 1-based line on that page
+    bboxes: List[BBox] = Field(default_factory=list)
+    status: Literal["verified", "unverified"]
+    value_supported: Optional[bool] = None  # does the quote state the value? None: can't tell (booleans)
+    method: Literal["gemini", "deterministic"]
+
+
 class Permit(BaseModel):
     permit_id: Optional[str] = None
     project_title: str
@@ -178,6 +204,9 @@ class Permit(BaseModel):
     fire: FireData
     water: WaterData
     structural: StructuralData
+    # Uploaded plan this permit was read from, and where each value appears in it.
+    source_document_id: Optional[str] = None
+    evidence: Dict[str, EvidenceSpan] = Field(default_factory=dict)
 
 
 class EvaluationReason(BaseModel):
@@ -186,6 +215,10 @@ class EvaluationReason(BaseModel):
     passed: bool
     severity: RuleSeverity = RuleSeverity.VIOLATION
     message: str
+    # Plan side: what the applicant's document says for the fields this rule checked.
+    evidence: List[EvidenceSpan] = Field(default_factory=list)
+    # Rule side: the city sources the rule cites (url, section, printed_page, ...).
+    rule_sources: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class DepartmentEvaluationRequest(BaseModel):
@@ -199,6 +232,8 @@ class DepartmentEvaluationRequest(BaseModel):
 class DepartmentEvaluationResponse(BaseModel):
     permit_id: str
     department: DepartmentName
+    jurisdiction_id: Optional[str] = None  # city pack the permit was evaluated against
+    rule_set_id: Optional[str] = None
     status: DepartmentStatus  # APPROVED or REJECTED
     execution_time_ms: float
     reasons: List[EvaluationReason]
@@ -323,6 +358,8 @@ class IntakeParseResponse(BaseModel):
     file_path: Optional[str] = None
     extracted_by: str = "gemini-2.5-flash"
     warnings: List[str] = Field(default_factory=list)
+    # Serve the upload from GET /intake/documents/{document_id}; None if it wasn't saved.
+    document_id: Optional[str] = None
 
 
 class SamplePlanInfo(BaseModel):

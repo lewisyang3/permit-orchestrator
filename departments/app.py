@@ -26,16 +26,18 @@ from contract.models import (
     DepartmentEvaluationResponse,
     DepartmentName,
     DepartmentStatus,
+    EvaluationReason,
     FaultControlRequest,
     FaultControlResponse,
     FaultMode,
+    RuleSeverity,
 )
 from departments.evaluator import (
     EvaluationOutcome,
     evaluate_department,
-    load_and_validate_rule_pack,
 )
 from departments.explanations import generate_explanations
+from departments.jurisdictions import load_registry, single_pack_registry
 
 
 class DepartmentFaultStatus(BaseModel):
@@ -47,16 +49,29 @@ class DepartmentFaultStatus(BaseModel):
     message: str = ""
 
 
-def create_app(department: str | None = None, rule_file: Path | None = None) -> FastAPI:
+def create_app(
+    department: str | None = None,
+    rule_file: Path | None = None,
+    rules_root: Path | None = None,
+) -> FastAPI:
+    """Build a department service.
+
+    By default it loads every city pack under RULES_ROOT (default "rules") and picks
+    the pack per request from the permit's city. Passing rule_file (or setting
+    RULE_FILE) instead applies that one pack to every permit; that is for tests only.
+    """
     name = DepartmentName(department or os.environ.get("DEPARTMENT", "fire"))
-    path = rule_file or Path(os.environ.get("RULE_FILE", f"rules/{name.value}.yaml"))
+    single_file = rule_file or (Path(os.environ["RULE_FILE"]) if os.environ.get("RULE_FILE") else None)
+    root = rules_root or Path(os.environ.get("RULES_ROOT", "rules"))
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # Startup lifespan: load and validate YAML rule pack for DEPARTMENT using evaluator.py.
-        # Validate rule pack at startup and fail fast on malformed rules.
-        pack = load_and_validate_rule_pack(path, expected_department=name)
-        app.state.rule_pack = pack
+        # Load and validate every rule pack at startup; fail fast on malformed rules.
+        if single_file is not None:
+            registry = single_pack_registry(single_file, name)
+        else:
+            registry = load_registry(root, name)
+        app.state.registry = registry
         async with httpx.AsyncClient(timeout=1.2) as http_client:
             app.state.http_client = http_client
             yield
@@ -121,13 +136,11 @@ def create_app(department: str | None = None, rule_file: Path | None = None) -> 
 
     @app.get("/rules")
     async def rules() -> Dict[str, Any]:
-        pack = app.state.rule_pack
+        registry = app.state.registry
         return {
             "department": name.value,
-            "rule_set_id": pack["rule_set_id"],
-            "rule_count": len(pack["rules"]),
+            "jurisdictions": [j.summary() for j in registry.jurisdictions.values()],
             "evaluation_ready": True,
-            "scope": pack.get("scope", {}),
             "notes": "Partial starter rules; approval disabled",
         }
 
@@ -152,7 +165,33 @@ def create_app(department: str | None = None, rule_file: Path | None = None) -> 
             if fc.mode == FaultMode.SLOW:
                 await asyncio.sleep(fc.delay_ms / 1000.0)
 
-        pack = app.state.rule_pack
+        registry = app.state.registry
+        jurisdiction = registry.resolve(request.permit.property_address)
+        if jurisdiction is None:
+            # Don't name the cities that are supported: each city is a separate customer.
+            addr = request.permit.property_address
+            reason = EvaluationReason(
+                rule_id="UNSUPPORTED_JURISDICTION",
+                rule_name="Jurisdiction has no rule pack",
+                passed=False,
+                severity=RuleSeverity.ADVISORY,
+                message=(
+                    f"No {name.value} rules are loaded for {addr.city}, {addr.state}. "
+                    "A reviewer must evaluate this permit against that city's own requirements."
+                ),
+            )
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "UNSUPPORTED_JURISDICTION",
+                    "department": name.value,
+                    "message": reason.message,
+                    "unresolved_reasons": [reason.model_dump(mode="json")],
+                    "findings": [],
+                    "execution_time_ms": (perf_counter() - start_time) * 1000.0,
+                },
+            )
+        pack = jurisdiction.pack
 
         # Run deterministic evaluation via departments.evaluator.
         report = evaluate_department(rule_pack=pack, permit=request.permit)
@@ -173,6 +212,8 @@ def create_app(department: str | None = None, rule_file: Path | None = None) -> 
             return DepartmentEvaluationResponse(
                 permit_id=request.permit_id,
                 department=name,
+                jurisdiction_id=jurisdiction.jurisdiction_id,
+                rule_set_id=pack["rule_set_id"],
                 status=DepartmentStatus.REJECTED,
                 execution_time_ms=execution_time_ms,
                 reasons=report.reasons,
@@ -191,6 +232,8 @@ def create_app(department: str | None = None, rule_file: Path | None = None) -> 
                 detail={
                     "code": "INCOMPLETE_REVIEW",
                     "department": name.value,
+                    "jurisdiction_id": jurisdiction.jurisdiction_id,
+                    "rule_set_id": pack["rule_set_id"],
                     "message": "Evaluation incomplete: partial pack policy or missing facts require human review",
                     "unresolved_reasons": reasons_payload,
                     "findings": findings_payload,
@@ -202,6 +245,8 @@ def create_app(department: str | None = None, rule_file: Path | None = None) -> 
         return DepartmentEvaluationResponse(
             permit_id=request.permit_id,
             department=name,
+            jurisdiction_id=jurisdiction.jurisdiction_id,
+            rule_set_id=pack["rule_set_id"],
             status=DepartmentStatus.APPROVED,
             execution_time_ms=execution_time_ms,
             reasons=report.reasons,

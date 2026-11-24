@@ -91,6 +91,45 @@ export interface Permit {
   fire: FireData;
   water: WaterData;
   structural: StructuralData;
+  /** Uploaded plan this permit was read from (GET /intake/documents/{id}). */
+  source_document_id?: string | null;
+  /** Where each value appears in that document, keyed by field path. */
+  evidence?: Record<string, EvidenceSpan>;
+}
+
+/** Highlight rectangle in PDF points, origin at the page's top-left corner. */
+export interface BBox {
+  x0: number;
+  top: number;
+  x1: number;
+  bottom: number;
+}
+
+/**
+ * Where one extracted value appears in the uploaded document.
+ * "verified": the server found this text in the document; quote is the document's own text.
+ * "unverified": it could not; quote is the parser's claim and must be checked by hand.
+ */
+export interface EvidenceSpan {
+  field_path: string; // e.g. "zoning.setback_front_ft"
+  quote: string;
+  page?: number | null; // 1-based; null for text uploads
+  line?: number | null;
+  bboxes: BBox[];
+  status: 'verified' | 'unverified';
+  value_supported?: boolean | null; // does the quote state the value? null: can't tell
+  method: 'gemini' | 'deterministic';
+}
+
+/** A city source a rule cites (from the rule pack's source entries). */
+export interface RuleSource {
+  url?: string;
+  section?: string;
+  printed_page?: number;
+  source_type?: string;
+  retrieval?: string;
+  checked_on?: string;
+  [key: string]: unknown;
 }
 
 export interface EvaluationReason {
@@ -99,6 +138,10 @@ export interface EvaluationReason {
   passed: boolean;
   severity?: RuleSeverity;
   message: string;
+  /** What the applicant's document says for the fields this rule checked. */
+  evidence?: EvidenceSpan[];
+  /** City sources the rule cites. */
+  rule_sources?: RuleSource[];
 }
 
 export interface PermitViolation {
@@ -106,6 +149,15 @@ export interface PermitViolation {
   rule_id: string;
   message: string;
   rule_name?: string;
+  /** What the applicant's document says for the fields this rule checked. */
+  evidence?: EvidenceSpan[];
+  /** City sources the rule cites. */
+  rule_sources?: RuleSource[];
+}
+
+/** One department reason as carried on trace events (detail.findings). */
+export interface DepartmentFinding extends EvaluationReason {
+  department: DepartmentName;
 }
 
 export type TraceEventType =
@@ -295,6 +347,9 @@ export interface DepartmentEvaluationRequest {
 export interface DepartmentEvaluationResponse {
   permit_id: string;
   department: DepartmentName;
+  /** City rule pack the permit was evaluated against, e.g. "ca-san-jose". */
+  jurisdiction_id?: string | null;
+  rule_set_id?: string | null;
   status: 'APPROVED' | 'REJECTED';
   execution_time_ms: number;
   reasons: EvaluationReason[];
@@ -314,6 +369,8 @@ export interface IntakeParseResponse {
   file_path?: string | null;
   extracted_by: string;
   warnings: string[];
+  /** Fetch the upload from GET /intake/documents/{document_id}. */
+  document_id?: string | null;
 }
 
 export interface SamplePlanInfo {

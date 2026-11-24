@@ -74,8 +74,8 @@ def test_deterministic_text_plan_parsing(sample_plan_text):
     assert isinstance(permit, Permit)
     assert permit.project_title == "Single Family Residential Rear Addition"
     assert permit.property_address.street == "742 Evergreen Terrace"
-    assert permit.property_address.city == "Springfield"
-    assert permit.property_address.zip == "97477"
+    assert permit.property_address.city == "San Jose"
+    assert permit.property_address.zip == "95125"
     assert permit.applicant.name == "Homer Simpson"
     assert permit.applicant.role.value == "homeowner"
     assert permit.zoning.zone_code == ZoneCode.R1
@@ -223,7 +223,10 @@ async def test_gemini_multimodal_extraction_mock(sample_pdf_bytes):
             assert permit.project_title == "Commercial Restaurant Expansion"
             assert permit.zoning.zone_code == ZoneCode.C1
             assert permit.structural.construction_type == ConstructionType.LIGHT_STEEL
-            assert len(warnings) == 0
+            # This mock response cites no evidence, so the only warning says so.
+            assert len(warnings) == 1
+            assert warnings[0].startswith("No source text was cited for: project_title")
+            assert permit.evidence == {}
 
 
 @pytest.mark.anyio

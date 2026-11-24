@@ -1,0 +1,14 @@
+# Jurisdiction metadata for this city pack. See ../README.md for how packs are resolved.
+jurisdiction_id: "ca-san-jose"
+city: "San José"
+state: "CA"
+# Spellings that should resolve here. Accents, case and punctuation are ignored.
+aliases:
+  - "San Jose"
+code_cycle: "2025 California codes"
+# Departments this city has rules for. Each needs a <department>.yaml next to this file.
+departments:
+  - "zoning"
+  - "fire"
+  - "water"
+  - "structural"
