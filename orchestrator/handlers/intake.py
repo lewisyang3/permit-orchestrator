@@ -8,6 +8,7 @@ Raises explicit validation errors when mandatory parameters are missing.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -19,6 +20,7 @@ from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, HTTPException, status
+from pydantic import ValidationError
 
 from contract.models import (
     Applicant,
@@ -43,38 +45,12 @@ logger = logging.getLogger("orchestrator.intake")
 
 DEFAULT_MODEL = "gemini-3-flash-preview"
 DEFAULT_API_BASE = "https://generativelanguage.googleapis.com"
-DEFAULT_TIMEOUT_SECONDS = 25.0
+DEFAULT_TIMEOUT_SECONDS = 15.0
 UPLOADS_DIR = Path(os.environ.get("UPLOADS_DIR", "/data/uploads" if Path("/data").is_dir() else "uploads"))
 
 router = APIRouter(prefix="/intake", tags=["intake"])
 
 
-def _load_env_fallback() -> None:
-    """Load environment variables from .env if GEMINI_API_KEY is not already set."""
-    if not os.environ.get("GEMINI_API_KEY"):
-        candidates = [
-            Path(".env"),
-            Path(__file__).resolve().parent.parent.parent / ".env",
-            Path.cwd() / ".env",
-        ]
-        for p in candidates:
-            if p.is_file():
-                try:
-                    for line in p.read_text(encoding="utf-8").splitlines():
-                        line = line.strip()
-                        if line and not line.startswith("#") and "=" in line:
-                            k, v = line.split("=", 1)
-                            k = k.strip()
-                            v = v.strip().strip("'\"")
-                            if k and k not in os.environ:
-                                os.environ[k] = v
-                    break
-                except Exception:
-                    pass
-
-
-# Automatically check for .env on module load
-_load_env_fallback()
 
 
 # -------------------------------------------------------------------------
@@ -88,6 +64,15 @@ class MissingFieldsError(ValueError):
         self.missing_fields = missing_fields
         msg = message or f"Plan parsing failed. Missing required fields: {', '.join(missing_fields)}"
         super().__init__(msg)
+
+
+class InvalidFieldsError(ValueError):
+    """Raised when extracted plan fields are present but fail Permit model validation."""
+
+    def __init__(self, errors: List[Dict[str, Any]]):
+        self.errors = errors
+        locs = sorted({".".join(str(p) for p in e.get("loc", ())) for e in errors})
+        super().__init__(f"Plan parsing failed. Invalid field values: {', '.join(locs)}")
 
 
 # -------------------------------------------------------------------------
@@ -314,6 +299,50 @@ def _clean_bool(val: Any) -> Optional[bool]:
     return None
 
 
+_US_STATES: Dict[str, str] = {
+    "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR", "california": "CA",
+    "colorado": "CO", "connecticut": "CT", "delaware": "DE", "district of columbia": "DC",
+    "florida": "FL", "georgia": "GA", "hawaii": "HI", "idaho": "ID", "illinois": "IL",
+    "indiana": "IN", "iowa": "IA", "kansas": "KS", "kentucky": "KY", "louisiana": "LA",
+    "maine": "ME", "maryland": "MD", "massachusetts": "MA", "michigan": "MI", "minnesota": "MN",
+    "mississippi": "MS", "missouri": "MO", "montana": "MT", "nebraska": "NE", "nevada": "NV",
+    "new hampshire": "NH", "new jersey": "NJ", "new mexico": "NM", "new york": "NY",
+    "north carolina": "NC", "north dakota": "ND", "ohio": "OH", "oklahoma": "OK", "oregon": "OR",
+    "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC", "south dakota": "SD",
+    "tennessee": "TN", "texas": "TX", "utah": "UT", "vermont": "VT", "virginia": "VA",
+    "washington": "WA", "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY",
+}
+_US_STATE_CODES = frozenset(_US_STATES.values())
+
+
+def _normalize_state(val: Optional[str]) -> Optional[str]:
+    """Map a state name or code to its two-letter USPS code; None if unrecognized."""
+    if not val:
+        return None
+    s = re.sub(r"\s+", " ", val.strip().rstrip(".")).lower()
+    if s.upper() in _US_STATE_CODES:
+        return s.upper()
+    return _US_STATES.get(s)
+
+
+def _normalize_token(val: str) -> str:
+    """Lowercase and collapse whitespace/hyphens to underscores for enum matching."""
+    return re.sub(r"[\s-]+", "_", val.strip().lower())
+
+
+def _first(d: Dict[str, Any], *keys: str) -> Any:
+    """Return the first value among ``keys`` that is present and not None.
+
+    Unlike chaining ``d.get(a) or d.get(b)``, this keeps falsy-but-valid values
+    such as ``0``, ``0.0`` and ``False``.
+    """
+    for k in keys:
+        v = d.get(k)
+        if v is not None:
+            return v
+    return None
+
+
 def validate_extracted_permit_dict(
     data: Dict[str, Any],
     permit_id: Optional[str] = None,
@@ -334,10 +363,10 @@ def validate_extracted_permit_dict(
     addr_raw = data.get("property_address") or data.get("property_location") or {}
     if not isinstance(addr_raw, dict):
         addr_raw = {}
-    street = _clean_str(addr_raw.get("street") or addr_raw.get("address"))
+    street = _clean_str(_first(addr_raw, "street", "address"))
     city = _clean_str(addr_raw.get("city"))
-    state = _clean_str(addr_raw.get("state"))
-    zip_code = _clean_str(addr_raw.get("zip") or addr_raw.get("zip_code"))
+    state = _normalize_state(_clean_str(addr_raw.get("state")))
+    zip_code = _clean_str(_first(addr_raw, "zip", "zip_code"))
 
     if not street:
         missing_fields.append("property_address.street")
@@ -359,9 +388,9 @@ def validate_extracted_permit_dict(
     app_role_raw = _clean_str(app_raw.get("role"))
     app_role: Optional[ApplicantRole] = None
     if app_role_raw:
-        role_clean = app_role_raw.lower().replace(" ", "_").replace("-", "_")
+        role_clean = _normalize_token(app_role_raw)
         for r in ApplicantRole:
-            if r.value == role_clean or r.name.lower() == role_clean:
+            if r.value in role_clean:
                 app_role = r
                 break
     if not app_role:
@@ -376,7 +405,7 @@ def validate_extracted_permit_dict(
     if not isinstance(zon_raw, dict):
         zon_raw = {}
 
-    zone_str = _clean_str(zon_raw.get("zone_code") or zon_raw.get("zone_district") or zon_raw.get("zone"))
+    zone_str = _clean_str(_first(zon_raw, "zone_code", "zone_district", "zone"))
     zone_code: Optional[ZoneCode] = None
     if zone_str:
         zm = re.search(r"\b(R-1|R-2|C-1|C-2|MU|M-1)\b", zone_str, re.IGNORECASE)
@@ -388,32 +417,29 @@ def validate_extracted_permit_dict(
     if not zone_code:
         missing_fields.append("zoning.zone_code")
 
-    b_height = _clean_float(zon_raw.get("building_height_ft") or zon_raw.get("building_height"))
+    b_height = _clean_float(_first(zon_raw, "building_height_ft", "building_height"))
     if b_height is None:
         missing_fields.append("zoning.building_height_ft")
 
-    lot_area = _clean_float(zon_raw.get("lot_area_sqft") or zon_raw.get("lot_area"))
+    lot_area = _clean_float(_first(zon_raw, "lot_area_sqft", "lot_area"))
     if lot_area is None:
         missing_fields.append("zoning.lot_area_sqft")
 
     footprint = _clean_float(
-        zon_raw.get("building_footprint_sqft")
-        or zon_raw.get("proposed_total_footprint")
-        or zon_raw.get("proposed_footprint")
-        or zon_raw.get("footprint")
+        _first(zon_raw, "building_footprint_sqft", "proposed_total_footprint", "proposed_footprint", "footprint")
     )
     if footprint is None:
         missing_fields.append("zoning.building_footprint_sqft")
 
-    sb_front = _clean_float(zon_raw.get("setback_front_ft") or zon_raw.get("front_setback"))
+    sb_front = _clean_float(_first(zon_raw, "setback_front_ft", "front_setback"))
     if sb_front is None:
         missing_fields.append("zoning.setback_front_ft")
 
-    sb_rear = _clean_float(zon_raw.get("setback_rear_ft") or zon_raw.get("rear_setback"))
+    sb_rear = _clean_float(_first(zon_raw, "setback_rear_ft", "rear_setback"))
     if sb_rear is None:
         missing_fields.append("zoning.setback_rear_ft")
 
-    sb_side = _clean_float(zon_raw.get("setback_side_ft") or zon_raw.get("side_setback"))
+    sb_side = _clean_float(_first(zon_raw, "setback_side_ft", "side_setback"))
     if sb_side is None:
         missing_fields.append("zoning.setback_side_ft")
 
@@ -440,19 +466,17 @@ def validate_extracted_permit_dict(
     sprinklers = _clean_bool(
         fire_raw.get("has_sprinkler_system")
         if "has_sprinkler_system" in fire_raw
-        else (fire_raw.get("automatic_sprinklers") or fire_raw.get("sprinklers"))
+        else (_first(fire_raw, "automatic_sprinklers", "sprinklers"))
     )
     if sprinklers is None:
         missing_fields.append("fire.has_sprinkler_system")
 
-    exits = _clean_int(fire_raw.get("egress_exits_count") or fire_raw.get("exits") or fire_raw.get("egress_exits"))
+    exits = _clean_int(_first(fire_raw, "egress_exits_count", "exits", "egress_exits"))
     if exits is None:
         missing_fields.append("fire.egress_exits_count")
 
     dist_hydrant = _clean_float(
-        fire_raw.get("distance_to_hydrant_ft")
-        or fire_raw.get("distance_to_nearest_fire_hydrant")
-        or fire_raw.get("distance_to_hydrant")
+        _first(fire_raw, "distance_to_hydrant_ft", "distance_to_nearest_fire_hydrant", "distance_to_hydrant")
     )
     if dist_hydrant is None:
         missing_fields.append("fire.distance_to_hydrant_ft")
@@ -463,17 +487,13 @@ def validate_extracted_permit_dict(
         water_raw = {}
 
     w_meter = _clean_float(
-        water_raw.get("water_meter_size_inches")
-        or water_raw.get("water_service_meter_size")
-        or water_raw.get("water_meter_size")
+        _first(water_raw, "water_meter_size_inches", "water_service_meter_size", "water_meter_size")
     )
     if w_meter is None:
         missing_fields.append("water.water_meter_size_inches")
 
     daily_water = _clean_float(
-        water_raw.get("daily_water_usage_gpd")
-        or water_raw.get("estimated_daily_water_usage")
-        or water_raw.get("daily_water_usage")
+        _first(water_raw, "daily_water_usage_gpd", "estimated_daily_water_usage", "daily_water_usage")
     )
     if daily_water is None:
         missing_fields.append("water.daily_water_usage_gpd")
@@ -481,7 +501,7 @@ def validate_extracted_permit_dict(
     backflow = _clean_bool(
         water_raw.get("has_backflow_preventer")
         if "has_backflow_preventer" in water_raw
-        else (water_raw.get("backflow_preventer_installed") or water_raw.get("backflow_preventer"))
+        else (_first(water_raw, "backflow_preventer_installed", "backflow_preventer"))
     )
     if backflow is None:
         missing_fields.append("water.has_backflow_preventer")
@@ -489,7 +509,7 @@ def validate_extracted_permit_dict(
     stormwater = _clean_bool(
         water_raw.get("has_stormwater_plan")
         if "has_stormwater_plan" in water_raw
-        else (water_raw.get("stormwater_management_plan") or water_raw.get("stormwater_plan"))
+        else (_first(water_raw, "stormwater_management_plan", "stormwater_plan"))
     )
     if stormwater is None:
         missing_fields.append("water.has_stormwater_plan")
@@ -499,11 +519,11 @@ def validate_extracted_permit_dict(
     if not isinstance(struct_raw, dict):
         struct_raw = {}
 
-    stories = _clean_int(struct_raw.get("stories_count") or struct_raw.get("stories"))
+    stories = _clean_int(_first(struct_raw, "stories_count", "stories"))
     if stories is None:
         missing_fields.append("structural.stories_count")
 
-    framing_str = _clean_str(struct_raw.get("construction_type") or struct_raw.get("framing_construction"))
+    framing_str = _clean_str(_first(struct_raw, "construction_type", "framing_construction"))
     construction_type: Optional[ConstructionType] = None
     if framing_str:
         f_clean = framing_str.lower()
@@ -514,7 +534,7 @@ def validate_extracted_permit_dict(
     if not construction_type:
         missing_fields.append("structural.construction_type")
 
-    seismic_str = _clean_str(struct_raw.get("seismic_design_category") or struct_raw.get("seismic_category"))
+    seismic_str = _clean_str(_first(struct_raw, "seismic_design_category", "seismic_category"))
     seismic_cat: Optional[SeismicDesignCategory] = None
     if seismic_str:
         sm = re.search(r"\b([A-E])\b", seismic_str.upper())
@@ -529,7 +549,7 @@ def validate_extracted_permit_dict(
     found_str = _clean_str(struct_raw.get("foundation_type"))
     foundation_type: Optional[FoundationType] = None
     if found_str:
-        found_clean = found_str.lower().replace(" ", "_")
+        found_clean = _normalize_token(found_str)
         for f in FoundationType:
             if f.value in found_clean or found_clean in f.value:
                 foundation_type = f
@@ -542,59 +562,64 @@ def validate_extracted_permit_dict(
 
     # Optional fields
     desc = _clean_str(data.get("project_description"))
-    cost = _clean_float(data.get("estimated_cost_usd") or data.get("estimated_cost")) or 0.0
+    cost = _clean_float(_first(data, "estimated_cost_usd", "estimated_cost")) or 0.0
     phone = _clean_str(app_raw.get("phone"))
-    alarm = _clean_bool(fire_raw.get("has_fire_alarm") or fire_raw.get("fire_alarm_system")) or False
+    alarm = _clean_bool(_first(fire_raw, "has_fire_alarm", "fire_alarm_system")) or False
 
     pid = permit_id or f"pm-intake-{uuid4().hex[:8]}"
 
-    return Permit(
-        permit_id=pid,
-        project_title=title,
-        project_description=desc,
-        estimated_cost_usd=cost,
-        property_address=PropertyAddress(
-            street=street,
-            city=city,
-            state=state,
-            zip=zip_code,
-        ),
-        applicant=Applicant(
-            name=app_name,
-            role=app_role,
-            email=app_email,
-            phone=phone,
-        ),
-        zoning=ZoningData(
-            zone_code=zone_code,
-            building_height_ft=b_height,
-            lot_area_sqft=lot_area,
-            building_footprint_sqft=footprint,
-            setback_front_ft=sb_front,
-            setback_rear_ft=sb_rear,
-            setback_side_ft=sb_side,
-        ),
-        fire=FireData(
-            occupancy_type=occupancy_type,
-            occupant_load=occ_load,
-            has_sprinkler_system=sprinklers,
-            egress_exits_count=exits,
-            distance_to_hydrant_ft=dist_hydrant,
-            has_fire_alarm=alarm,
-        ),
-        water=WaterData(
-            water_meter_size_inches=w_meter,
-            daily_water_usage_gpd=daily_water,
-            has_backflow_preventer=backflow,
-            has_stormwater_plan=stormwater,
-        ),
-        structural=StructuralData(
-            stories_count=stories,
-            construction_type=construction_type,
-            seismic_design_category=seismic_cat,
-            foundation_type=foundation_type,
-        ),
-    )
+    try:
+        return Permit(
+            permit_id=pid,
+            project_title=title,
+            project_description=desc,
+            estimated_cost_usd=cost,
+            property_address=PropertyAddress(
+                street=street,
+                city=city,
+                state=state,
+                zip=zip_code,
+            ),
+            applicant=Applicant(
+                name=app_name,
+                role=app_role,
+                email=app_email,
+                phone=phone,
+            ),
+            zoning=ZoningData(
+                zone_code=zone_code,
+                building_height_ft=b_height,
+                lot_area_sqft=lot_area,
+                building_footprint_sqft=footprint,
+                setback_front_ft=sb_front,
+                setback_rear_ft=sb_rear,
+                setback_side_ft=sb_side,
+            ),
+            fire=FireData(
+                occupancy_type=occupancy_type,
+                occupant_load=occ_load,
+                has_sprinkler_system=sprinklers,
+                egress_exits_count=exits,
+                distance_to_hydrant_ft=dist_hydrant,
+                has_fire_alarm=alarm,
+            ),
+            water=WaterData(
+                water_meter_size_inches=w_meter,
+                daily_water_usage_gpd=daily_water,
+                has_backflow_preventer=backflow,
+                has_stormwater_plan=stormwater,
+            ),
+            structural=StructuralData(
+                stories_count=stories,
+                construction_type=construction_type,
+                seismic_design_category=seismic_cat,
+                foundation_type=foundation_type,
+            ),
+        )
+    except ValidationError as err:
+        raise InvalidFieldsError(
+            [{"loc": list(e["loc"]), "msg": e["msg"], "type": e["type"]} for e in err.errors()]
+        ) from err
 
 
 # -------------------------------------------------------------------------
@@ -651,7 +676,7 @@ def deterministic_plan_parse(
     # 2. Property Address
     street = _find(r"Address:\s*(.*)")
     city = _find(r"City:\s*(.*)")
-    state = _find(r"State:\s*([a-zA-Z]{2})")
+    state = _find(r"\bState:\s*(.+)")
     zip_code = _find(r"Zip(?: Code)?:\s*([0-9]{5})")
 
     # If street contains full address like "123 Main St, City, ST 12345"
@@ -665,7 +690,7 @@ def deterministic_plan_parse(
 
     # 3. Applicant
     applicant_name = _find(r"Applicant Information:[\s\S]*?Name:\s*(.*)") or _find(r"Name:\s*(.*)")
-    role_str = _find(r"Role:\s*([a-zA-Z_]+)")
+    role_str = _find(r"Role:\s*(.+)")
     applicant_email = _find(r"Email:\s*([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)")
     applicant_phone = _find(r"Phone:\s*([0-9() -]+)")
 
@@ -694,9 +719,9 @@ def deterministic_plan_parse(
 
     # 7. Structural
     stories = _find(r"Stories:\s*([0-9]+)")
-    framing_str = _find(r"Framing Construction:\s*([a-zA-Z_]+)")
+    framing_str = _find(r"Framing Construction:\s*(.+)")
     seismic_str = _find(r"Seismic Design Category:\s*([A-E])")
-    foundation_str = _find(r"Foundation Type:\s*([a-zA-Z_]+)")
+    foundation_str = _find(r"Foundation Type:\s*(.+)")
 
     raw_dict = {
         "project_title": title,
@@ -882,7 +907,9 @@ async def _call_gemini_multimodal_api(
 
     last_error: Optional[Exception] = None
 
-    async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+    # One overall deadline: httpx timeouts apply per phase (connect/read/...) and per
+    # request, so 404/503 retries across candidates could otherwise add up.
+    async with asyncio.timeout(timeout_seconds), httpx.AsyncClient(timeout=timeout_seconds) as client:
         for candidate_model in model_candidates:
             url = f"{base_url.rstrip('/')}/v1beta/models/{candidate_model}:generateContent?key={api_key}"
             try:
@@ -895,9 +922,10 @@ async def _call_gemini_multimodal_api(
                     last_error = RuntimeError(f"Gemini API returned status {res.status_code}: {res.text}")
                     continue
                 raise RuntimeError(f"Gemini API returned status {res.status_code}: {res.text}")
-            except httpx.RequestError as req_err:
-                last_error = req_err
-                continue
+            except (httpx.TimeoutException, httpx.NetworkError):
+                # The API itself is slow or unreachable: another model name will not
+                # help, so fail fast and let the caller use the deterministic parser.
+                raise
 
     raise last_error or RuntimeError("Gemini API call failed across all model candidates.")
 
@@ -921,6 +949,45 @@ def _parse_gemini_json_response(raw_json: Dict[str, Any]) -> Dict[str, Any]:
     return json.loads(text.strip())
 
 
+def _recover_missing_with_deterministic(
+    gemini_err: MissingFieldsError,
+    content_text: Optional[str],
+    filename: str,
+    content_bytes: Optional[bytes],
+    permit_id: str,
+    warnings: List[str],
+    file_path: Optional[str],
+) -> Tuple[Permit, str, List[str], Optional[str]]:
+    """Retry a Gemini extraction that missed fields with the deterministic parser.
+
+    Returns the deterministic permit if it finds every required field. Otherwise raises
+    MissingFieldsError listing the fields neither parser found (or Gemini's own list
+    when the two parsers missed disjoint fields).
+    """
+    try:
+        permit, fb_warnings = deterministic_plan_parse(content_text, filename, content_bytes)
+    except MissingFieldsError as fb_err:
+        fb_missing = set(fb_err.missing_fields)
+        both = [f for f in gemini_err.missing_fields if f in fb_missing]
+        if both:
+            raise MissingFieldsError(both) from gemini_err
+        raise gemini_err from fb_err
+    except Exception as fb_err:
+        raise gemini_err from fb_err
+
+    logger.warning(
+        "Gemini output missing fields %s; deterministic parser recovered them.",
+        gemini_err.missing_fields,
+    )
+    permit.permit_id = permit_id
+    warnings.append(
+        f"Gemini output missing fields ({', '.join(gemini_err.missing_fields)}); "
+        "deterministic parser recovered them."
+    )
+    warnings.extend(fb_warnings)
+    return permit, "deterministic_fallback", warnings, file_path
+
+
 async def parse_plan_document(
     filename: str,
     content_base64: Optional[str] = None,
@@ -932,7 +999,6 @@ async def parse_plan_document(
 
     Raises MissingFieldsError if any required fields are missing from the input.
     """
-    _load_env_fallback()
     warnings: List[str] = []
     content_bytes: Optional[bytes] = None
 
@@ -982,12 +1048,20 @@ async def parse_plan_document(
                 base_url=base_url,
                 timeout_seconds=timeout_sec,
             )
+            if model_used != model:
+                warnings.append(f"Configured model {model} unavailable; used {model_used}.")
             extracted_dict = _parse_gemini_json_response(raw_response)
             permit = validate_extracted_permit_dict(extracted_dict, permit_id=permit_id)
             return permit, model_used, warnings, file_path
-        except MissingFieldsError:
-            # Re-raise missing fields error immediately; do NOT disguise missing values
+        except InvalidFieldsError:
+            # Gemini read values that fail model validation: report them, don't mask them.
             raise
+        except MissingFieldsError as gemini_err:
+            # Gemini left required fields empty. The deterministic parser only succeeds
+            # when every required field is literally present, so trying it invents nothing.
+            return _recover_missing_with_deterministic(
+                gemini_err, content_text, filename, content_bytes, permit_id, warnings, file_path
+            )
         except Exception as err:
             logger.warning("Gemini intake extraction failed (%s). Falling back to deterministic parser.", err)
             warnings.append(f"Gemini API extraction failed: {err}; fell back to deterministic parser.")
@@ -1035,6 +1109,16 @@ async def parse_intake_plan(req: IntakeParseRequest) -> IntakeParseResponse:
                 "error": "MISSING_REQUIRED_FIELDS",
                 "message": str(err),
                 "missing_fields": err.missing_fields,
+            },
+        )
+    except InvalidFieldsError as err:
+        logger.warning("Plan parsing rejected due to invalid field values: %s", err.errors)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": "INVALID_FIELD_VALUES",
+                "message": str(err),
+                "errors": err.errors,
             },
         )
     except Exception as err:
