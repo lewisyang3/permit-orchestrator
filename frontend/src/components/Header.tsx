@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type AppTab = 'review' | 'trace' | 'fixtures' | 'diagnostics';
+export type AppTab = 'review' | 'trace';
 
 export interface HeaderProps {
   mode: 'fixture' | 'live';

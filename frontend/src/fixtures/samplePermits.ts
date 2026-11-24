@@ -1,14 +1,58 @@
-import { Permit, EvidenceSpan } from '../types';
-import { FIXTURE_SCENARIOS } from './index';
+import { Permit, EvidenceSpan, IntakeParseResponse } from '../types';
+
+/**
+ * Built-in sample permits, used when the backend cannot serve a sample plan.
+ *
+ * Every value here is copied from the plan file its evidence quotes
+ * (fixtures/sample_plans/*), so a "verified" chip never sits next to a value
+ * the document does not state. samplePermits.test.ts enforces this.
+ */
 
 export const RESIDENTIAL_ADDITION_PERMIT: Permit = {
-  ...FIXTURE_SCENARIOS.approved.permit,
   project_title: 'Single Family Residential Rear Addition',
+  project_description:
+    'Construction of a 550 sqft single-story rear master suite addition to an existing single-family residence.',
+  estimated_cost_usd: 85000,
   property_address: {
     street: '742 Evergreen Terrace',
     city: 'San Jose',
     state: 'CA',
     zip: '95125',
+  },
+  applicant: {
+    name: 'Homer Simpson',
+    role: 'homeowner',
+    email: 'homer.simpson@example.com',
+    phone: '(555) 733-4663',
+  },
+  zoning: {
+    zone_code: 'R-1',
+    building_height_ft: 16.5,
+    lot_area_sqft: 8400,
+    building_footprint_sqft: 2350,
+    setback_front_ft: 25.0,
+    setback_rear_ft: 32.0,
+    setback_side_ft: 8.5,
+  },
+  fire: {
+    occupancy_type: 'residential',
+    occupant_load: 5,
+    has_sprinkler_system: false,
+    egress_exits_count: 2,
+    distance_to_hydrant_ft: 140,
+    has_fire_alarm: true,
+  },
+  water: {
+    water_meter_size_inches: 0.75,
+    daily_water_usage_gpd: 280,
+    has_backflow_preventer: true,
+    has_stormwater_plan: true,
+  },
+  structural: {
+    stories_count: 1,
+    construction_type: 'wood_frame',
+    seismic_design_category: 'C',
+    foundation_type: 'continuous_spread_footing',
   },
   source_document_id: 'sample-residential-rear-addition',
   evidence: {
@@ -275,31 +319,79 @@ export const RESIDENTIAL_ADDITION_PERMIT: Permit = {
   },
 };
 
-const makeTextSpan = (field_path: string, quote: string, line: number): EvidenceSpan => ({
+/**
+ * Evidence span for a plain-text sample plan (no page or bbox).
+ * Booleans pass valueSupported = null: the plan words them ("Yes (RPZ assembly)"),
+ * so the quote cannot be matched against true/false mechanically.
+ */
+const makeTextSpan = (
+  field_path: string,
+  quote: string,
+  line: number,
+  valueSupported: boolean | null = true,
+): EvidenceSpan => ({
   field_path,
   quote,
   page: null,
   line,
   bboxes: [],
   status: 'verified',
-  value_supported: true,
+  value_supported: valueSupported,
   method: 'deterministic',
 });
 
 export const COMMERCIAL_RESTAURANT_PERMIT: Permit = {
-  ...FIXTURE_SCENARIOS.rejected.permit,
   project_title: 'Commercial Restaurant Outdoor Dining Expansion',
+  project_description:
+    'Interior dining expansion and new covered outdoor patio seating for a downtown bistro.',
+  estimated_cost_usd: 210000,
   property_address: {
     street: '104 Main Street',
     city: 'San Jose',
     state: 'CA',
     zip: '95113',
   },
+  applicant: {
+    name: 'Gordon Ramsay',
+    role: 'licensed_contractor',
+    email: 'chef.ramsay@bistroglobal.com',
+    phone: '(555) 867-5309',
+  },
+  zoning: {
+    zone_code: 'C-1',
+    building_height_ft: 24.0,
+    lot_area_sqft: 12000,
+    building_footprint_sqft: 5200,
+    setback_front_ft: 10.0,
+    setback_rear_ft: 20.0,
+    setback_side_ft: 5.0,
+  },
+  fire: {
+    occupancy_type: 'commercial',
+    occupant_load: 140,
+    has_sprinkler_system: false,
+    egress_exits_count: 1,
+    distance_to_hydrant_ft: 95,
+    has_fire_alarm: true,
+  },
+  water: {
+    water_meter_size_inches: 2.0,
+    daily_water_usage_gpd: 1850,
+    has_backflow_preventer: false,
+    has_stormwater_plan: true,
+  },
+  structural: {
+    stories_count: 1,
+    construction_type: 'light_steel',
+    seismic_design_category: 'B',
+    foundation_type: 'slab_on_grade',
+  },
   source_document_id: 'sample-commercial-restaurant',
   evidence: {
     'project_title': makeTextSpan('project_title', 'Project Title: Commercial Restaurant Outdoor Dining Expansion', 2),
     'property_address.street': makeTextSpan('property_address.street', 'Address: 104 Main Street', 7),
     'property_address.city': makeTextSpan('property_address.city', 'City: San Jose', 8),
+    'property_address.state': makeTextSpan('property_address.state', 'State: CA', 9),
     'applicant.name': makeTextSpan('applicant.name', 'Name: Gordon Ramsay', 13),
     'applicant.role': makeTextSpan('applicant.role', 'Role: licensed_contractor', 14),
     'zoning.zone_code': makeTextSpan('zoning.zone_code', 'Zone District: C-1 (Neighborhood Commercial)', 19),
@@ -311,12 +403,14 @@ export const COMMERCIAL_RESTAURANT_PERMIT: Permit = {
     'zoning.setback_side_ft': makeTextSpan('zoning.setback_side_ft', 'Side Setback: 5.0 ft', 25),
     'fire.occupancy_type': makeTextSpan('fire.occupancy_type', 'Occupancy Type: commercial', 28),
     'fire.occupant_load': makeTextSpan('fire.occupant_load', 'Occupant Load: 140 persons', 29),
-    'fire.has_sprinkler_system': makeTextSpan('fire.has_sprinkler_system', 'Automatic Sprinklers: No (Missing suppression system)', 31),
+    'fire.has_fire_alarm': makeTextSpan('fire.has_fire_alarm', 'Fire Alarm System: Yes', 30, null),
+    'fire.has_sprinkler_system': makeTextSpan('fire.has_sprinkler_system', 'Automatic Sprinklers: No (Missing suppression system)', 31, null),
     'fire.egress_exits_count': makeTextSpan('fire.egress_exits_count', 'Egress Exits Count: 1 exit door', 32),
     'fire.distance_to_hydrant_ft': makeTextSpan('fire.distance_to_hydrant_ft', 'Distance to Nearest Fire Hydrant: 95 ft', 33),
     'water.water_meter_size_inches': makeTextSpan('water.water_meter_size_inches', 'Water Service Meter Size: 2.0 inches', 36),
     'water.daily_water_usage_gpd': makeTextSpan('water.daily_water_usage_gpd', 'Estimated Daily Water Usage: 1,850 gpd', 37),
-    'water.has_backflow_preventer': makeTextSpan('water.has_backflow_preventer', 'Backflow Preventer Installed: No', 38),
+    'water.has_backflow_preventer': makeTextSpan('water.has_backflow_preventer', 'Backflow Preventer Installed: No', 38, null),
+    'water.has_stormwater_plan': makeTextSpan('water.has_stormwater_plan', 'Stormwater Management Plan: Yes', 39, null),
     'structural.stories_count': makeTextSpan('structural.stories_count', 'Stories: 1 story', 42),
     'structural.construction_type': makeTextSpan('structural.construction_type', 'Framing Construction: light_steel', 43),
     'structural.seismic_design_category': makeTextSpan('structural.seismic_design_category', 'Seismic Design Category: B', 44),
@@ -325,19 +419,57 @@ export const COMMERCIAL_RESTAURANT_PERMIT: Permit = {
 };
 
 export const INDUSTRIAL_WAREHOUSE_PERMIT: Permit = {
-  ...FIXTURE_SCENARIOS.timeout.permit,
   project_title: 'Suburban Storage Warehouse Modernization',
+  project_description:
+    'Structural retrofit and automated racking system installation for high-bay logistics facility.',
+  estimated_cost_usd: 650000,
   property_address: {
     street: '4800 Industrial Parkway',
     city: 'San Jose',
     state: 'CA',
     zip: '95131',
   },
+  applicant: {
+    name: 'Bruce Wayne',
+    role: 'engineer',
+    email: 'bwayne@wayneenterprises.com',
+    phone: '(555) 234-5678',
+  },
+  zoning: {
+    zone_code: 'M-1',
+    building_height_ft: 34.0,
+    lot_area_sqft: 45000,
+    building_footprint_sqft: 18500,
+    setback_front_ft: 40.0,
+    setback_rear_ft: 35.0,
+    setback_side_ft: 20.0,
+  },
+  fire: {
+    occupancy_type: 'industrial',
+    occupant_load: 45,
+    has_sprinkler_system: true,
+    egress_exits_count: 4,
+    distance_to_hydrant_ft: 110,
+    has_fire_alarm: true,
+  },
+  water: {
+    water_meter_size_inches: 2.0,
+    daily_water_usage_gpd: 750,
+    has_backflow_preventer: true,
+    has_stormwater_plan: true,
+  },
+  structural: {
+    stories_count: 2,
+    construction_type: 'reinforced_concrete',
+    seismic_design_category: 'C',
+    foundation_type: 'deep_pile',
+  },
   source_document_id: 'sample-industrial-warehouse',
   evidence: {
     'project_title': makeTextSpan('project_title', 'Project Title: Suburban Storage Warehouse Modernization', 2),
     'property_address.street': makeTextSpan('property_address.street', 'Address: 4800 Industrial Parkway', 7),
     'property_address.city': makeTextSpan('property_address.city', 'City: San Jose', 8),
+    'property_address.state': makeTextSpan('property_address.state', 'State: CA', 9),
     'applicant.name': makeTextSpan('applicant.name', 'Name: Bruce Wayne', 13),
     'applicant.role': makeTextSpan('applicant.role', 'Role: engineer', 14),
     'zoning.zone_code': makeTextSpan('zoning.zone_code', 'Zone District: M-1 (Light Industrial)', 19),
@@ -349,15 +481,55 @@ export const INDUSTRIAL_WAREHOUSE_PERMIT: Permit = {
     'zoning.setback_side_ft': makeTextSpan('zoning.setback_side_ft', 'Side Setback: 20.0 ft', 25),
     'fire.occupancy_type': makeTextSpan('fire.occupancy_type', 'Occupancy Type: industrial', 28),
     'fire.occupant_load': makeTextSpan('fire.occupant_load', 'Occupant Load: 45 persons', 29),
-    'fire.has_sprinkler_system': makeTextSpan('fire.has_sprinkler_system', 'Automatic Sprinklers: Yes (ESFR ceiling fire suppression)', 31),
+    'fire.has_fire_alarm': makeTextSpan('fire.has_fire_alarm', 'Fire Alarm System: Yes (Addressable multi-zone)', 30, null),
+    'fire.has_sprinkler_system': makeTextSpan('fire.has_sprinkler_system', 'Automatic Sprinklers: Yes (ESFR ceiling fire suppression)', 31, null),
     'fire.egress_exits_count': makeTextSpan('fire.egress_exits_count', 'Egress Exits Count: 4 exit doors', 32),
     'fire.distance_to_hydrant_ft': makeTextSpan('fire.distance_to_hydrant_ft', 'Distance to Nearest Fire Hydrant: 110 ft', 33),
     'water.water_meter_size_inches': makeTextSpan('water.water_meter_size_inches', 'Water Service Meter Size: 2.0 inches', 36),
     'water.daily_water_usage_gpd': makeTextSpan('water.daily_water_usage_gpd', 'Estimated Daily Water Usage: 750 gpd', 37),
-    'water.has_backflow_preventer': makeTextSpan('water.has_backflow_preventer', 'Backflow Preventer Installed: Yes (RPZ assembly)', 38),
+    'water.has_backflow_preventer': makeTextSpan('water.has_backflow_preventer', 'Backflow Preventer Installed: Yes (RPZ assembly)', 38, null),
+    'water.has_stormwater_plan': makeTextSpan('water.has_stormwater_plan', 'Stormwater Management Plan: Yes (Detention basin)', 39, null),
     'structural.stories_count': makeTextSpan('structural.stories_count', 'Stories: 2 stories', 42),
     'structural.construction_type': makeTextSpan('structural.construction_type', 'Framing Construction: reinforced_concrete', 43),
     'structural.seismic_design_category': makeTextSpan('structural.seismic_design_category', 'Seismic Design Category: C', 44),
     'structural.foundation_type': makeTextSpan('structural.foundation_type', 'Foundation Type: deep_pile', 45),
   },
 };
+
+export const SAMPLE_PERMITS: readonly Permit[] = [
+  RESIDENTIAL_ADDITION_PERMIT,
+  COMMERCIAL_RESTAURANT_PERMIT,
+  INDUSTRIAL_WAREHOUSE_PERMIT,
+];
+
+/**
+ * File each sample's evidence was quoted from, keyed by source_document_id.
+ * Must match SAMPLE_DOCUMENT_FILES in orchestrator/handlers/intake.py, which
+ * serves these files to the evidence viewer.
+ */
+export const SAMPLE_DOCUMENT_FILENAMES: Readonly<Record<string, string>> = {
+  'sample-residential-rear-addition': 'residential_rear_addition.pdf',
+  'sample-commercial-restaurant': 'commercial_restaurant_patio.txt',
+  'sample-industrial-warehouse': 'warehouse_modernization.txt',
+};
+
+/** Label for intake results built from these fixtures rather than a model run. */
+export const BUILT_IN_SAMPLE_EXTRACTOR = 'built-in-fixture-fallback';
+
+/**
+ * The intake result to show for a built-in sample permit, or null when the
+ * permit did not come from one (an upload, a manual edit, a golden fixture).
+ */
+export function sampleIntakeResult(permit: Permit): IntakeParseResponse | null {
+  const docId = permit.source_document_id;
+  const filename = docId ? SAMPLE_DOCUMENT_FILENAMES[docId] : undefined;
+  if (!filename) return null;
+  return {
+    permit,
+    filename,
+    file_path: null,
+    extracted_by: BUILT_IN_SAMPLE_EXTRACTOR,
+    warnings: [],
+    document_id: docId,
+  };
+}

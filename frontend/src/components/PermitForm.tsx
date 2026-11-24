@@ -5,6 +5,7 @@ import {
   RESIDENTIAL_ADDITION_PERMIT,
   COMMERCIAL_RESTAURANT_PERMIT,
   INDUSTRIAL_WAREHOUSE_PERMIT,
+  sampleIntakeResult,
 } from '../fixtures/samplePermits';
 import { EvidenceChip } from './EvidenceChip';
 import { summarizeEvidence } from '../utils/evidence';
@@ -48,18 +49,10 @@ export const PermitForm: React.FC<PermitFormProps> = ({
 }) => {
   // Intake Plan & PDF parsing state (Task T13)
   const [isParsingPlan, setIsParsingPlan] = useState(false);
-  const [intakeResult, setIntakeResult] = useState<IntakeParseResponse | null>(() => {
-    if (permit.evidence && Object.keys(permit.evidence).length > 0) {
-      return {
-        permit,
-        filename: 'residential_rear_addition_plan.txt',
-        file_path: null,
-        extracted_by: 'gemini-2.5-flash',
-        warnings: [],
-      };
-    }
-    return null;
-  });
+  // A built-in sample shows its real source file; anything else has no intake result yet.
+  const [intakeResult, setIntakeResult] = useState<IntakeParseResponse | null>(() =>
+    sampleIntakeResult(permit),
+  );
   const [intakeError, setIntakeError] = useState<string | null>(null);
   const [samplePlans, setSamplePlans] = useState<SamplePlanInfo[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -183,13 +176,7 @@ export const PermitForm: React.FC<PermitFormProps> = ({
           err.message === 'Failed to fetch')
       ) {
         onChange(fallbackPermit);
-        setIntakeResult({
-          permit: fallbackPermit,
-          filename: `${planId}_plan.txt`,
-          file_path: null,
-          extracted_by: 'gemini-2.5-flash',
-          warnings: [],
-        });
+        setIntakeResult(sampleIntakeResult(fallbackPermit));
         setIntakeError(null);
       } else {
         setIntakeError(err.message || 'Failed to parse sample plan');
@@ -365,7 +352,7 @@ export const PermitForm: React.FC<PermitFormProps> = ({
                     <h4 className="text-xs font-bold text-rose-900 tracking-tight">
                       {parsed.title}
                     </h4>
-                    {parsed.missingFields && (
+                    {parsed.missingFields && parsed.missingFields.length > 0 && (
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-200/80 text-rose-800">
                         {parsed.missingFields.length} missing
                       </span>

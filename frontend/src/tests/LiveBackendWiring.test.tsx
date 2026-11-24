@@ -100,42 +100,6 @@ describe('Live Backend Wiring & SSE Streaming (Task T9)', () => {
     });
   });
 
-  it('runs the 1-minute fault demo: kills fire department and draws visible timeout', async () => {
-    vi.spyOn(api, 'checkBackendHealth').mockResolvedValue(true);
-    const setFaultSpy = vi.spyOn(api, 'setDepartmentFault').mockResolvedValue({
-      department: 'fire',
-      mode: 'offline',
-      delay_ms: 3000,
-      message: 'Fault mode for fire set to offline',
-    });
-    vi.spyOn(api, 'submitPermit').mockResolvedValue({
-      permit_id: 'pm-demo-001',
-      trace_id: 'trc-demo-001',
-      state: 'RECEIVED',
-      stream_url: '/permits/pm-demo-001/stream',
-    });
-
-    render(<App />);
-
-    // Wait for backend online status
-    await waitFor(() => expect(screen.getByText('Backend :8000 Online')).toBeInTheDocument());
-
-    // Click the Kill Fire Department demo button
-    const killButton = screen.getByText('Kill Fire Department (Outage Demo)');
-    await waitFor(() => expect(killButton).not.toBeDisabled());
-    fireEvent.click(killButton);
-
-    await waitFor(() => {
-      expect(setFaultSpy).toHaveBeenCalledWith({
-        department: 'fire',
-        mode: 'offline',
-        delay_ms: 3000,
-      });
-      // Should switch to live mode automatically
-      expect(screen.getByText('Live Orchestrator SSE Mode Active')).toBeInTheDocument();
-    });
-  });
-
   it('disconnects active EventSource connection when switching from Live to Fixture mode', async () => {
     vi.spyOn(api, 'checkBackendHealth').mockResolvedValue(true);
     vi.spyOn(api, 'submitPermit').mockResolvedValue({

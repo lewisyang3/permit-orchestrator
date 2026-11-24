@@ -1,4 +1,26 @@
-import { Permit, TraceEvent, PermitViolation, DepartmentName } from '../types';
+import {
+  Permit,
+  TraceEvent,
+  PermitViolation,
+  DepartmentName,
+  DepartmentFinding,
+  EvidenceSpan,
+} from '../types';
+
+/**
+ * Local preview only: these checks run in the browser when no backend is
+ * reachable. They are not a city rule pack, so findings carry no jurisdiction
+ * and no municipal code citations (rule_sources) — only the plan evidence for
+ * the fields each check read.
+ */
+const LOCAL_PREVIEW_NOTE = 'Local preview: not evaluated against a city rule pack.';
+
+/** Evidence spans the permit carries for the given field paths, in order. */
+function evidenceFor(permit: Permit, fieldPaths: string[]): EvidenceSpan[] {
+  return fieldPaths
+    .map((path) => permit.evidence?.[path])
+    .filter((span): span is EvidenceSpan => Boolean(span));
+}
 
 export function evaluatePermitData(permit: Permit): TraceEvent[] {
   const traceId = `trc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -14,6 +36,7 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
       zoningViolations.push({
         department: 'zoning',
         rule_id: 'SJ-Z-105',
+        evidence: evidenceFor(permit, ['zoning.building_height_ft', 'zoning.zone_code']),
         message: `Building height of ${permit.zoning.building_height_ft} ft exceeds maximum allowable limit of 35.0 ft for district ${permit.zoning.zone_code || ''}.`,
       });
     }
@@ -21,6 +44,7 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
       zoningViolations.push({
         department: 'zoning',
         rule_id: 'SJ-Z-101',
+        evidence: evidenceFor(permit, ['zoning.setback_front_ft']),
         message: `Front setback of ${permit.zoning.setback_front_ft} ft encroaches on minimum required setback of 15.0 ft.`,
       });
     }
@@ -28,6 +52,7 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
       zoningViolations.push({
         department: 'zoning',
         rule_id: 'SJ-Z-104',
+        evidence: evidenceFor(permit, ['zoning.setback_rear_ft']),
         message: `Rear setback of ${permit.zoning.setback_rear_ft} ft encroaches on minimum required setback of 15.0 ft.`,
       });
     }
@@ -35,6 +60,7 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
       zoningViolations.push({
         department: 'zoning',
         rule_id: 'SJ-Z-102',
+        evidence: evidenceFor(permit, ['zoning.setback_side_ft']),
         message: `Side setback of ${permit.zoning.setback_side_ft} ft encroaches on minimum required setback of 5.0 ft.`,
       });
     }
@@ -51,6 +77,7 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
       fireViolations.push({
         department: 'fire',
         rule_id: 'SJ-F-201',
+        evidence: evidenceFor(permit, ['fire.occupancy_type', 'fire.has_sprinkler_system', 'fire.occupant_load']),
         message: 'Automatic fire sprinkler system required for commercial occupancy with occupant load >= 100 (NFPA 13 / CBC 903.2.1.2).',
       });
     }
@@ -59,6 +86,7 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
       fireViolations.push({
         department: 'fire',
         rule_id: 'SJ-F-202',
+        evidence: evidenceFor(permit, ['fire.egress_exits_count', 'fire.occupant_load']),
         message: 'At least 2 separate and remote exit doors required for occupant load exceeding 50 persons (CBC 1006.2).',
       });
     }
@@ -67,6 +95,7 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
       fireViolations.push({
         department: 'fire',
         rule_id: 'SJ-F-203',
+        evidence: evidenceFor(permit, ['fire.has_fire_alarm']),
         message: 'Hardwired fire alarm and life safety notification system required.',
       });
     }
@@ -75,6 +104,7 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
       fireViolations.push({
         department: 'fire',
         rule_id: 'SJ-F-204',
+        evidence: evidenceFor(permit, ['fire.distance_to_hydrant_ft']),
         message: `Distance to nearest municipal fire hydrant (${permit.fire.distance_to_hydrant_ft} ft) exceeds maximum allowed 300 ft.`,
       });
     }
@@ -88,6 +118,7 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
       waterViolations.push({
         department: 'water',
         rule_id: 'SJ-W-301',
+        evidence: evidenceFor(permit, ['fire.occupancy_type', 'water.has_backflow_preventer']),
         message: 'Commercial/industrial service connection requires certified backflow preventer assembly (RPZ / Dual Check).',
       });
     }
@@ -95,6 +126,7 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
       waterViolations.push({
         department: 'water',
         rule_id: 'SJ-W-302',
+        evidence: evidenceFor(permit, ['zoning.building_footprint_sqft', 'water.has_stormwater_plan']),
         message: 'Impervious surface footprint > 5,000 sq ft requires certified stormwater detention and mitigation plan.',
       });
     }
@@ -108,6 +140,7 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
       structuralViolations.push({
         department: 'structural',
         rule_id: 'SJ-S-401',
+        evidence: evidenceFor(permit, ['structural.stories_count', 'structural.construction_type']),
         message: 'Wood frame construction (Type V-B) restricted to maximum 3 stories under building code.',
       });
     }
@@ -119,6 +152,7 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
       structuralViolations.push({
         department: 'structural',
         rule_id: 'SJ-S-402',
+        evidence: evidenceFor(permit, ['structural.stories_count', 'structural.foundation_type', 'structural.seismic_design_category']),
         message: 'Multi-story building in high seismic zone requires engineered continuous footing or deep pile foundation.',
       });
     }
@@ -206,37 +240,31 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
   departmentData.forEach((d, idx) => {
     const compOffset = 100 + idx * 30 + d.latencyMs;
 
-    const deptEvidence = Object.values(permit.evidence || {}).filter(
-      (s) => s && s.field_path && s.field_path.startsWith(`${d.dept}.`)
-    );
-
-    const findings = [
-      {
-        department: d.dept,
-        rule_id: `SJ-${d.dept.toUpperCase()[0]}-101`,
-        rule_name: `${d.dept.toUpperCase()} Compliance Verification`,
-        passed: d.status === 'APPROVED',
-        message:
-          d.status === 'APPROVED'
-            ? `Verified compliant with San José municipal code for ${d.dept}.`
-            : `${d.violations.length} violation(s) cited under San José municipal code.`,
-        rule_sources: [
-          {
-            section:
-              d.dept === 'zoning'
-                ? '§20.30.200'
-                : d.dept === 'fire'
-                ? '§17.12.010'
-                : d.dept === 'water'
-                ? '§15.12.100'
-                : '§24.02.100',
-            title: `San José Municipal Code (${d.dept})`,
-            url: 'https://library.municode.com/ca/san_jose/codes/code_of_ordinances',
-          },
-        ],
-        evidence: deptEvidence.slice(0, 4),
-      },
-    ];
+    // Rejected: one failed finding per violation, with the evidence that check read.
+    // Approved: one passed finding with this department's evidence.
+    const findings: DepartmentFinding[] =
+      d.status === 'APPROVED'
+        ? [
+            {
+              department: d.dept,
+              rule_id: `local-preview-${d.dept}`,
+              rule_name: `${d.dept[0].toUpperCase()}${d.dept.slice(1)} checks (local preview)`,
+              passed: true,
+              message: `No ${d.dept} violations found. ${LOCAL_PREVIEW_NOTE}`,
+              evidence: Object.values(permit.evidence ?? {}).filter((span) =>
+                span.field_path.startsWith(`${d.dept}.`),
+              ),
+            },
+          ]
+        : d.violations.map((v) => ({
+            department: d.dept,
+            rule_id: v.rule_id,
+            rule_name: v.rule_name ?? v.rule_id,
+            passed: false,
+            severity: 'VIOLATION' as const,
+            message: `${v.message} ${LOCAL_PREVIEW_NOTE}`,
+            evidence: v.evidence ?? [],
+          }));
 
     if (d.status === 'APPROVED') {
       events.push({
@@ -253,7 +281,6 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
           latency_ms: d.latencyMs,
           rules_evaluated: d.rulesEvaluated,
           findings,
-          jurisdiction_id: 'ca-san-jose',
         },
       });
 
@@ -269,7 +296,6 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
           status: 'APPROVED',
           duration_ms: d.latencyMs + 15,
           findings,
-          jurisdiction_id: 'ca-san-jose',
         },
       });
     } else {
@@ -287,7 +313,6 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
           error: `${d.dept.toUpperCase()} department code violations cited`,
           violations: d.violations,
           findings,
-          jurisdiction_id: 'ca-san-jose',
         },
       });
 
@@ -304,7 +329,6 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
           duration_ms: d.latencyMs + 15,
           violations: d.violations,
           findings,
-          jurisdiction_id: 'ca-san-jose',
         },
       });
     }

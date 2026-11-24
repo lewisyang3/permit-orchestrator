@@ -4,6 +4,7 @@ import App from '../App';
 import { PermitForm } from '../components/PermitForm';
 import * as api from '../utils/api';
 import { FIXTURE_SCENARIOS } from '../fixtures';
+import { RESIDENTIAL_ADDITION_PERMIT } from '../fixtures/samplePermits';
 
 describe('Intake Plan & PDF Parsing Component (Task T13)', () => {
   beforeEach(() => {
@@ -294,6 +295,86 @@ describe('Intake Plan & PDF Parsing Component (Task T13)', () => {
         })
       );
     });
+
+    // The fallback is labelled as the built-in fixture it is, with its real source file.
+    expect(screen.getByText('built-in-fixture-fallback')).toBeInTheDocument();
+    expect(screen.getByText('Source: warehouse_modernization.txt')).toBeInTheDocument();
+    expect(screen.queryByText(/gemini/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the real source file for a built-in sample permit on mount', () => {
+    vi.spyOn(api, 'fetchSamplePlans').mockResolvedValue([]);
+    render(
+      <PermitForm
+        permit={RESIDENTIAL_ADDITION_PERMIT}
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        isSubmitting={false}
+        mode="live"
+      />
+    );
+
+    expect(screen.getByText('Source: residential_rear_addition.pdf')).toBeInTheDocument();
+    expect(screen.getByText('built-in-fixture-fallback')).toBeInTheDocument();
+  });
+
+  it('invents no intake result for a permit with evidence from an unknown document', () => {
+    vi.spyOn(api, 'fetchSamplePlans').mockResolvedValue([]);
+    const uploaded = { ...RESIDENTIAL_ADDITION_PERMIT, source_document_id: 'pm-intake-0123abcd' };
+    render(
+      <PermitForm
+        permit={uploaded}
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        isSubmitting={false}
+        mode="live"
+      />
+    );
+
+    expect(screen.queryByText(/^Source:/)).not.toBeInTheDocument();
+    expect(screen.queryByText('built-in-fixture-fallback')).not.toBeInTheDocument();
+  });
+
+  it('shows no missing-count badge when the backend omits the missing field list', async () => {
+    vi.spyOn(api, 'fetchSamplePlans').mockResolvedValue([]);
+    const errPayload = JSON.stringify({ detail: { error: 'MISSING_REQUIRED_FIELDS' } });
+    vi.spyOn(api, 'parseIntakePlan').mockRejectedValue(
+      new Error(`Plan parsing failed (422): ${errPayload}`)
+    );
+
+    const { container } = render(
+      <PermitForm
+        permit={samplePermit}
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        isSubmitting={false}
+        mode="live"
+      />
+    );
+
+    const originalFileReader = globalThis.FileReader;
+    class MockFileReader {
+      onload: any = null;
+      result: any = 'incomplete plan text';
+      readAsText() {
+        setTimeout(() => this.onload && this.onload(), 10);
+      }
+    }
+    globalThis.FileReader = MockFileReader as any;
+
+    try {
+      const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+      fireEvent.change(fileInput, {
+        target: { files: [new File(['incomplete plan text'], 'incomplete.txt', { type: 'text/plain' })] },
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('Plan Incomplete: Missing Required Fields')).toBeInTheDocument();
+      });
+      expect(screen.queryByText(/\d+ missing/)).not.toBeInTheDocument();
+    } finally {
+      globalThis.FileReader = originalFileReader;
+    }
   });
 
   it('determines approval based on selected sample plan data instead of reverting to default fixture', async () => {

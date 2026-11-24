@@ -2,13 +2,11 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Header, AppTab } from './components/Header';
 import { HeroSection } from './components/HeroSection';
 import { ForCitiesSection } from './components/ForCitiesSection';
-import { FixtureSelector } from './components/FixtureSelector';
 import { ConsensusBanner } from './components/ConsensusBanner';
 import { TraceWaterfall } from './components/TraceWaterfall';
 import { SpanDetailDrawer } from './components/SpanDetailDrawer';
 import { PermitForm } from './components/PermitForm';
 import { EvidenceProvider } from './components/EvidenceContext';
-import { FaultControlPanel } from './components/FaultControlPanel';
 import { FIXTURE_SCENARIOS, FixtureScenario } from './fixtures';
 import { RESIDENTIAL_ADDITION_PERMIT } from './fixtures/samplePermits';
 import { parseTraceEvents, ParsedSpan } from './utils/traceParser';
@@ -29,7 +27,6 @@ export const App: React.FC = () => {
   const [mode, setMode] = useState<'fixture' | 'live'>('fixture');
   const [activeTab, setActiveTab] = useState<AppTab>('review');
   const [isBackendOnline, setIsBackendOnline] = useState(false);
-  const [selectedScenario, setSelectedScenario] = useState<FixtureScenario>(FIXTURE_SCENARIOS.approved);
   const [currentPermit, setCurrentPermit] = useState<Permit>(RESIDENTIAL_ADDITION_PERMIT);
   const [activeEvents, setActiveEvents] = useState<TraceEvent[]>(FIXTURE_SCENARIOS.approved.events);
   const [selectedSpan, setSelectedSpan] = useState<ParsedSpan | null>(null);
@@ -76,25 +73,12 @@ export const App: React.FC = () => {
     }
   }, [activeEvents]);
 
-  // Handle fixture selection
-  const handleSelectScenario = (scenario: FixtureScenario) => {
-    if (simulationTimerRef.current) {
-      clearInterval(simulationTimerRef.current);
-      simulationTimerRef.current = null;
-    }
-    setIsSimulating(false);
-    setSelectedScenario(scenario);
-    setCurrentPermit(scenario.permit);
-    setActiveEvents(scenario.events);
-  };
-
   // Simulate replay of fixture events stream
   const handleSimulateReplay = (scenario: FixtureScenario) => {
     if (simulationTimerRef.current) {
       clearInterval(simulationTimerRef.current);
     }
 
-    setSelectedScenario(scenario);
     setCurrentPermit(scenario.permit);
     setActiveEvents([]);
     setIsSimulating(true);
@@ -259,14 +243,6 @@ export const App: React.FC = () => {
       setIsStreamingLive(false);
     }
     setMode(newMode);
-  };
-
-  // One-click live demo flow: trigger live submission after setting fault mode
-  const handleRunFaultDemo = () => {
-    setMode('live');
-    setTimeout(() => {
-      handleSubmitLive();
-    }, 150);
   };
 
   return (
@@ -457,25 +433,6 @@ export const App: React.FC = () => {
           />
         </div>
 
-        {/* Automated Vitest specifications testing bridge */}
-        <div className="sr-only" aria-hidden="false">
-          {mode === 'fixture' && (
-            <FixtureSelector
-              selectedId={selectedScenario.id}
-              onSelect={handleSelectScenario}
-              onSimulateReplay={handleSimulateReplay}
-              isSimulating={isSimulating}
-              onViewPermitJson={(sc) => {
-                handleSelectScenario(sc);
-                setActiveTab('review');
-              }}
-            />
-          )}
-          <FaultControlPanel
-            onRunFaultDemo={handleRunFaultDemo}
-            isBackendOnline={isBackendOnline}
-          />
-        </div>
       </main>
 
       {/* Side Sheet Drawer for Span Inspection */}

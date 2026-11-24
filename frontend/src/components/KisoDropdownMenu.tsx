@@ -2,8 +2,6 @@ import React, { useRef, useEffect } from 'react';
 import {
   FileCheck2,
   Clock,
-  FlaskConical,
-  Zap,
   Check,
   Radio,
   Play,
@@ -44,20 +42,6 @@ export const KISO_TAB_CONFIG: {
     badge: 'Observability',
     icon: <Clock className="h-4 w-4 text-[#1c1d21]" />,
     desc: 'Distributed trace execution waterfall with span latency metrics',
-  },
-  {
-    id: 'fixtures',
-    label: 'Fixtures',
-    badge: 'Contract Tests',
-    icon: <FlaskConical className="h-4 w-4 text-[#1c1d21]" />,
-    desc: 'Baseline demo scenarios: Approved, Rejected, and Timeout guarantee',
-  },
-  {
-    id: 'diagnostics',
-    label: 'Chaos Diagnostics',
-    badge: 'Fail-Safe',
-    icon: <Zap className="h-4 w-4 text-[#1c1d21]" />,
-    desc: 'Container fault injection controls and department outage testing',
   },
 ];
 
@@ -114,11 +98,7 @@ export const KisoDropdownMenu: React.FC<KisoDropdownMenuProps> = ({
   };
 
   const handleTriggerDemo = (scenarioId: 'approved' | 'rejected' | 'timeout') => {
-    if (onSelectDemo) {
-      onSelectDemo(scenarioId);
-    } else if (onTabChange) {
-      onTabChange('fixtures');
-    }
+    onSelectDemo?.(scenarioId);
     onClose();
 
     const workbenchEl = document.getElementById('app-workbench');
