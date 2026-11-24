@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Header, AppTab } from './components/Header';
 import { HeroSection } from './components/HeroSection';
-import { HowItWorks } from './components/HowItWorks';
-import { FeaturesSection } from './components/FeaturesSection';
+import { ForCitiesSection } from './components/ForCitiesSection';
 import { FixtureSelector } from './components/FixtureSelector';
 import { ConsensusBanner } from './components/ConsensusBanner';
 import { TraceWaterfall } from './components/TraceWaterfall';
@@ -300,11 +299,8 @@ export const App: React.FC = () => {
         onSelectDemo={handleSelectDemo}
       />
 
-      {/* How It Works Informational Flow */}
-      <HowItWorks />
-
-      {/* Features & Municipal Benefits */}
-      <FeaturesSection />
+      {/* For Cities & Municipalities Section */}
+      <ForCitiesSection />
 
       {/* Interactive Workbench / Review Application */}
       <main id="app-workbench" className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-16 space-y-6 scroll-mt-20">

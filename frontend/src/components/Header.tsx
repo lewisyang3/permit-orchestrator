@@ -49,22 +49,8 @@ export const Header: React.FC<HeaderProps> = ({
           </a>
         </div>
 
-        {/* Center Navigation Links matching KISO.png */}
+        {/* Center Navigation Links */}
         <nav className="hidden md:flex items-center space-x-8 text-sm font-medium text-[#2d2f34]">
-          <button
-            type="button"
-            onClick={() => scrollToSection('how-it-works')}
-            className="hover:text-[#1c1d21] transition-colors cursor-pointer py-1 border-b-2 border-transparent hover:border-[#1c1d21]/30"
-          >
-            How It Works
-          </button>
-          <button
-            type="button"
-            onClick={() => scrollToSection('features')}
-            className="hover:text-[#1c1d21] transition-colors cursor-pointer py-1 border-b-2 border-transparent hover:border-[#1c1d21]/30"
-          >
-            Features
-          </button>
           <button
             type="button"
             onClick={() => scrollToSection('for-cities')}
