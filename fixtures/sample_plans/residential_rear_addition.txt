@@ -5,9 +5,9 @@ Estimated Cost: $85,000 USD
 
 Property Location:
 Address: 742 Evergreen Terrace
-City: Springfield
-State: OR
-Zip: 97477
+City: San Jose
+State: CA
+Zip: 95125
 
 Applicant Information:
 Name: Homer Simpson

@@ -130,11 +130,11 @@ def test_department_services_configuration(compose_config: Dict[str, Any]):
         env = service.get("environment", {})
         assert env.get("DEPARTMENT") == dept
         assert env.get("PORT") == expected_port
-        expected_rule_file = f"/app/rules/{dept}.yaml"
-        assert env.get("RULE_FILE") == expected_rule_file
+        assert env.get("RULES_ROOT") == "/app/rules"
+        assert "RULE_FILE" not in env
 
-        # Verify corresponding rule file exists locally
-        local_rule_file = Path(f"rules/{dept}.yaml")
+        # Verify the San José pack for this department exists locally
+        local_rule_file = Path(f"rules/ca-san-jose/{dept}.yaml")
         assert local_rule_file.exists(), f"Rule file {local_rule_file} must exist"
 
         # Command

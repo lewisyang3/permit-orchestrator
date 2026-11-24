@@ -1,5 +1,6 @@
 # Sourced San José residential starter checks; see README.md for scope.
 schema_version: "0.2.0"
+jurisdiction_id: "ca-san-jose"
 rule_set_id: "san-jose-water-residential-starter"
 version: "0.2.0"
 department: "water"

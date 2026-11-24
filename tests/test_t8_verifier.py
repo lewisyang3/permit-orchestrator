@@ -138,14 +138,14 @@ async def real_dept_cluster() -> AsyncGenerator[
     dept_names = ["zoning", "fire", "water", "structural"]
     apps: Dict[str, FastAPI] = {}
     for name in dept_names:
-        rule_path = RULES_DIR / f"{name}.yaml"
+        rule_path = RULES_DIR / "ca-san-jose" / f"{name}.yaml"
         assert rule_path.exists(), f"Rule file missing: {rule_path}"
-        apps[name] = create_dept_app(name, rule_file=rule_path)
+        apps[name] = create_dept_app(name, rules_root=RULES_DIR)
 
     async with AsyncExitStack() as stack:
         for name, app in apps.items():
             await stack.enter_async_context(app.router.lifespan_context(app))
-            assert hasattr(app.state, "rule_pack"), f"{name} rule pack was not loaded"
+            assert hasattr(app.state, "registry"), f"{name} rule packs were not loaded"
 
         transport = RealDepartmentRouterTransport(apps)
         async with httpx.AsyncClient(transport=transport, timeout=10.0) as client:

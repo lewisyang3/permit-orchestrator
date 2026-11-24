@@ -12,7 +12,7 @@ import asyncio
 import os
 import time
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Sequence, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 from uuid import uuid4
 
 import httpx
@@ -77,6 +77,32 @@ def get_default_endpoints(overrides: Optional[Dict[str, str]] = None) -> Dict[st
         endpoints.update(overrides)
     return endpoints
 
+
+
+def _describe_client_error(response: httpx.Response) -> Tuple[str, List[EvaluationReason]]:
+    """Summarize a department 4xx, keeping its structured code, message and reasons.
+
+    Departments answer 422 with {"detail": {"code", "message", "unresolved_reasons"}} for
+    incomplete reviews and unsupported jurisdictions; anything else falls back to the status.
+    """
+    base = f"Department returned HTTP {response.status_code}"
+    try:
+        detail = response.json().get("detail")
+    except Exception:
+        return base, []
+    if not isinstance(detail, dict):
+        return base, []
+    code, message = detail.get("code"), detail.get("message")
+    text = f"{base}: {code}" if code else base
+    if message:
+        text = f"{text}: {message}"
+    reasons: List[EvaluationReason] = []
+    for raw in detail.get("unresolved_reasons") or []:
+        try:
+            reasons.append(EvaluationReason.model_validate(raw))
+        except Exception:
+            continue
+    return text, reasons
 
 async def _emit_trace_event(
     callback: Optional[Callable[[TraceEvent], Any]],
@@ -300,7 +326,7 @@ async def dispatch_department(
                     detail={
                         "attempts_total": attempt,
                         "final_status": DepartmentStatus.ERROR.value,
-                        "error": f"Department returned HTTP {response.status_code}",
+                        "error": _describe_client_error(response)[0],
                     },
                 )
                 await _emit_trace_event(
@@ -312,12 +338,13 @@ async def dispatch_department(
                     event_type=TraceEventType.SPAN_COMPLETED,
                     detail={"status": DepartmentStatus.ERROR.value, "duration_ms": elapsed_ms},
                 )
+                client_error, client_reasons = _describe_client_error(response)
                 return DepartmentResultSummary(
                     status=DepartmentStatus.ERROR,
                     attempts=attempt,
                     latency_ms=elapsed_ms,
-                    reasons=[],
-                    error_message=f"Department returned HTTP {response.status_code}",
+                    reasons=client_reasons,
+                    error_message=client_error,
                 )
             elif response.status_code == 200:
                 try:
@@ -342,6 +369,7 @@ async def dispatch_department(
                                 "status": eval_resp.status.value,
                                 "attempt": attempt,
                                 "latency_ms": round(call_duration_ms, 2),
+                                "jurisdiction_id": eval_resp.jurisdiction_id,
                             },
                         )
                         await _emit_trace_event(

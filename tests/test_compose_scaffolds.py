@@ -19,7 +19,7 @@ def permit():
 def test_each_department_loads_its_own_rules_and_does_not_fake_review(name, count):
     with TestClient(department_app(name)) as client:
         assert client.get("/health").json() == {"status": "healthy", "department": name}
-        assert client.get("/rules").json()["rule_count"] == count
+        assert client.get("/rules").json()["jurisdictions"][0]["rule_count"] == count
         response = client.post("/evaluate", json={
             "permit_id": "test-permit", "trace_id": "test-trace",
             "department": name, "attempt": 1, "permit": permit(),
@@ -36,7 +36,7 @@ def test_department_refuses_wrong_target_and_rule_pack():
         })
         assert response.status_code == 422
     with pytest.raises(ValueError, match="does not match"):
-        with TestClient(department_app("fire", Path("rules/water.yaml"))):
+        with TestClient(department_app("fire", Path("rules/ca-san-jose/water.yaml"))):
             pass
 
 

@@ -295,6 +295,9 @@ export interface DepartmentEvaluationRequest {
 export interface DepartmentEvaluationResponse {
   permit_id: string;
   department: DepartmentName;
+  /** City rule pack the permit was evaluated against, e.g. "ca-san-jose". */
+  jurisdiction_id?: string | null;
+  rule_set_id?: string | null;
   status: 'APPROVED' | 'REJECTED';
   execution_time_ms: number;
   reasons: EvaluationReason[];

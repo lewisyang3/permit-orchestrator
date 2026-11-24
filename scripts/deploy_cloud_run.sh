@@ -46,7 +46,7 @@ DEPT_URL_VARS=""
 for dept in "${DEPARTMENTS[@]}"; do
   gcloud run deploy "permit-${dept}" --image "${REPO}/department:latest" \
     "${COMMON_FLAGS[@]}" ${SECRET_FLAGS[@]+"${SECRET_FLAGS[@]}"} \
-    --set-env-vars "DEPARTMENT=${dept},RULE_FILE=/app/rules/${dept}.yaml,GEMINI_MODEL=gemini-2.5-flash"
+    --set-env-vars "DEPARTMENT=${dept},RULES_ROOT=/app/rules,GEMINI_MODEL=gemini-2.5-flash"
   url="$(gcloud run services describe "permit-${dept}" --region "$REGION" --format 'value(status.url)')"
   DEPT_URL_VARS="${DEPT_URL_VARS},$(echo "$dept" | tr a-z A-Z)_URL=${url}"
 done
