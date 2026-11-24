@@ -10,6 +10,7 @@ import { PermitForm } from './components/PermitForm';
 import { EvidenceProvider } from './components/EvidenceContext';
 import { FaultControlPanel } from './components/FaultControlPanel';
 import { FIXTURE_SCENARIOS, FixtureScenario } from './fixtures';
+import { RESIDENTIAL_ADDITION_PERMIT } from './fixtures/samplePermits';
 import { parseTraceEvents, ParsedSpan } from './utils/traceParser';
 import { evaluatePermitData } from './utils/permitEvaluator';
 import { TraceEvent, Permit } from './types';
@@ -29,7 +30,7 @@ export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AppTab>('review');
   const [isBackendOnline, setIsBackendOnline] = useState(false);
   const [selectedScenario, setSelectedScenario] = useState<FixtureScenario>(FIXTURE_SCENARIOS.approved);
-  const [currentPermit, setCurrentPermit] = useState<Permit>(FIXTURE_SCENARIOS.approved.permit);
+  const [currentPermit, setCurrentPermit] = useState<Permit>(RESIDENTIAL_ADDITION_PERMIT);
   const [activeEvents, setActiveEvents] = useState<TraceEvent[]>(FIXTURE_SCENARIOS.approved.events);
   const [selectedSpan, setSelectedSpan] = useState<ParsedSpan | null>(null);
 

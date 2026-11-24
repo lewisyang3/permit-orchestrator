@@ -206,6 +206,38 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
   departmentData.forEach((d, idx) => {
     const compOffset = 100 + idx * 30 + d.latencyMs;
 
+    const deptEvidence = Object.values(permit.evidence || {}).filter(
+      (s) => s && s.field_path && s.field_path.startsWith(`${d.dept}.`)
+    );
+
+    const findings = [
+      {
+        department: d.dept,
+        rule_id: `SJ-${d.dept.toUpperCase()[0]}-101`,
+        rule_name: `${d.dept.toUpperCase()} Compliance Verification`,
+        passed: d.status === 'APPROVED',
+        message:
+          d.status === 'APPROVED'
+            ? `Verified compliant with San José municipal code for ${d.dept}.`
+            : `${d.violations.length} violation(s) cited under San José municipal code.`,
+        rule_sources: [
+          {
+            section:
+              d.dept === 'zoning'
+                ? '§20.30.200'
+                : d.dept === 'fire'
+                ? '§17.12.010'
+                : d.dept === 'water'
+                ? '§15.12.100'
+                : '§24.02.100',
+            title: `San José Municipal Code (${d.dept})`,
+            url: 'https://library.municode.com/ca/san_jose/codes/code_of_ordinances',
+          },
+        ],
+        evidence: deptEvidence.slice(0, 4),
+      },
+    ];
+
     if (d.status === 'APPROVED') {
       events.push({
         event_id: `evt-${Math.random().toString(36).slice(2, 8)}`,
@@ -220,6 +252,8 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
           attempt: 1,
           latency_ms: d.latencyMs,
           rules_evaluated: d.rulesEvaluated,
+          findings,
+          jurisdiction_id: 'ca-san-jose',
         },
       });
 
@@ -234,6 +268,8 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
         detail: {
           status: 'APPROVED',
           duration_ms: d.latencyMs + 15,
+          findings,
+          jurisdiction_id: 'ca-san-jose',
         },
       });
     } else {
@@ -250,6 +286,8 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
           final_status: 'REJECTED',
           error: `${d.dept.toUpperCase()} department code violations cited`,
           violations: d.violations,
+          findings,
+          jurisdiction_id: 'ca-san-jose',
         },
       });
 
@@ -265,6 +303,8 @@ export function evaluatePermitData(permit: Permit): TraceEvent[] {
           status: 'REJECTED',
           duration_ms: d.latencyMs + 15,
           violations: d.violations,
+          findings,
+          jurisdiction_id: 'ca-san-jose',
         },
       });
     }
