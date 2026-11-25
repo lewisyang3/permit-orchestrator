@@ -100,6 +100,23 @@ export function groupMissingFields(paths: string[]): Record<string, CategorizedF
   return groups;
 }
 
+/**
+ * One invalid-field entry as display text. The backend sends Pydantic-style
+ * objects ({loc, msg, type}); strings are accepted as-is.
+ */
+export function formatFieldError(e: unknown): string {
+  if (typeof e === 'string') return e;
+  if (e && typeof e === 'object' && ('loc' in e || 'msg' in e)) {
+    const { loc, msg } = e as { loc?: unknown; msg?: unknown };
+    const path = Array.isArray(loc) ? loc.map(String).join('.') : '';
+    const text = typeof msg === 'string' ? msg : 'Invalid value';
+    if (!path) return text;
+    const label = FIELD_METADATA[path] ? FIELD_METADATA[path].label : path;
+    return `${label}: ${text}`;
+  }
+  return JSON.stringify(e);
+}
+
 export function parsePlanError(error: unknown): FormattedPlanError {
   if (!error) {
     return {
@@ -120,7 +137,7 @@ export function parsePlanError(error: unknown): FormattedPlanError {
       if (typeof detail === 'object' && detail !== null) {
         if (detail.error === 'MISSING_REQUIRED_FIELDS' || detail.missing_fields) {
           const fields: string[] = Array.isArray(detail.missing_fields)
-            ? detail.missing_fields
+            ? detail.missing_fields.filter((f: unknown): f is string => typeof f === 'string')
             : [];
           return {
             title: 'Plan Incomplete: Missing Required Fields',
@@ -132,7 +149,7 @@ export function parsePlanError(error: unknown): FormattedPlanError {
 
         if (detail.error === 'INVALID_FIELD_VALUES' || detail.errors) {
           const errors: string[] = Array.isArray(detail.errors)
-            ? detail.errors
+            ? detail.errors.map(formatFieldError)
             : [];
           return {
             title: 'Invalid Plan Parameters',

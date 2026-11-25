@@ -59,6 +59,20 @@ export const PermitForm: React.FC<PermitFormProps> = ({
   const ev = (path: string) => <EvidenceChip span={permit.evidence?.[path]} />;
   const evidenceSummary = summarizeEvidence(permit);
 
+  // Keep the "Source" banner in step with the permit on screen. A parse sets
+  // intakeResult before calling onChange, so its document_id already matches and
+  // is kept; a permit from anywhere else (a demo fixture, another sample) gets its
+  // own sample result, or none.
+  useEffect(() => {
+    setIntakeResult((prev) =>
+      prev && (prev.document_id ?? null) === (permit.source_document_id ?? null)
+        ? prev
+        : sampleIntakeResult(permit),
+    );
+    // Only a change of source document should replace the banner, not field edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permit.source_document_id]);
+
   // Load sample plan catalog on mount
   useEffect(() => {
     let mounted = true;

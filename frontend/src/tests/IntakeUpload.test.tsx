@@ -440,4 +440,77 @@ describe('Intake Plan & PDF Parsing Component (Task T13)', () => {
       expect(screen.getByText(/Rejected: Code Violations/i)).toBeInTheDocument();
     });
   });
+  it('shows the backend 422 invalid-field errors as text instead of crashing', async () => {
+    vi.spyOn(api, 'fetchSamplePlans').mockResolvedValue([]);
+    // The real shape orchestrator/handlers/intake.py sends: Pydantic {loc, msg, type} objects.
+    const body = JSON.stringify({
+      detail: {
+        error: 'INVALID_FIELD_VALUES',
+        message: 'Plan parsing failed. Invalid field values: zoning.building_height_ft',
+        errors: [
+          { loc: ['zoning', 'building_height_ft'], msg: 'Input should be greater than 0', type: 'greater_than' },
+        ],
+      },
+    });
+    vi.spyOn(api, 'parseIntakePlan').mockRejectedValue(new Error(`Plan parsing failed (422): ${body}`));
+
+    const { container } = render(
+      <PermitForm
+        permit={RESIDENTIAL_ADDITION_PERMIT}
+        onChange={vi.fn()}
+        onSubmit={vi.fn()}
+        isSubmitting={false}
+        mode="live"
+      />
+    );
+
+    const originalFileReader = globalThis.FileReader;
+    const mockFileReader: any = {
+      readAsDataURL: vi.fn(function (this: any) {
+        this.result = 'data:application/pdf;base64,JVBERHVtbXk=';
+        this.onload?.();
+      }),
+      readAsText: vi.fn(),
+    };
+    (globalThis as any).FileReader = vi.fn(() => mockFileReader);
+
+    try {
+      const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+      fireEvent.change(fileInput, {
+        target: { files: [new File(['%PDF-dummy'], 'bad.pdf', { type: 'application/pdf' })] },
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('Invalid Plan Parameters')).toBeInTheDocument();
+        expect(
+          screen.getByText('Building Height (ft): Input should be greater than 0'),
+        ).toBeInTheDocument();
+      });
+    } finally {
+      globalThis.FileReader = originalFileReader;
+    }
+  });
+
+  it('keeps the Source banner in step with the permit on screen', async () => {
+    vi.spyOn(api, 'fetchSamplePlans').mockResolvedValue([]);
+    const props = { onChange: vi.fn(), onSubmit: vi.fn(), isSubmitting: false, mode: 'fixture' as const };
+
+    const { rerender } = render(<PermitForm permit={RESIDENTIAL_ADDITION_PERMIT} {...props} />);
+    expect(screen.getByText('Source: residential_rear_addition.pdf')).toBeInTheDocument();
+
+    // A field edit keeps the same source document, so the banner stays.
+    rerender(
+      <PermitForm
+        permit={{ ...RESIDENTIAL_ADDITION_PERMIT, project_title: 'Edited title' }}
+        {...props}
+      />
+    );
+    expect(screen.getByText('Source: residential_rear_addition.pdf')).toBeInTheDocument();
+
+    // A demo fixture permit did not come from that file, so the banner clears.
+    rerender(<PermitForm permit={FIXTURE_SCENARIOS.rejected.permit} {...props} />);
+    await waitFor(() => {
+      expect(screen.queryByText('Source: residential_rear_addition.pdf')).not.toBeInTheDocument();
+    });
+  });
 });
