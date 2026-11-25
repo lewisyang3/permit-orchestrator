@@ -357,6 +357,45 @@ def test_unknown_or_malformed_document_ids_404(tmp_path, bad):
         assert client.get(f"/intake/documents/{bad}").status_code == 404
 
 
+@pytest.mark.parametrize(
+    "doc_id, expected_content_type, disposition_filename",
+    [
+        ("sample-residential-rear-addition", "application/pdf", "residential_rear_addition.pdf"),
+        ("residential_addition", "application/pdf", "residential_rear_addition.pdf"),
+        ("commercial_restaurant", "text/plain; charset=utf-8", "commercial_restaurant_patio.txt"),
+        ("industrial_warehouse", "text/plain; charset=utf-8", "warehouse_modernization.txt"),
+    ],
+)
+def test_sample_documents_are_served(doc_id, expected_content_type, disposition_filename):
+    with TestClient(create_app()) as client:
+        resp = client.get(f"/intake/documents/{doc_id}")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == expected_content_type
+        assert disposition_filename in resp.headers["content-disposition"]
+        assert len(resp.content) > 0
+
+
+@pytest.mark.parametrize(
+    "doc_id, plan_key",
+    [
+        ("sample-residential-rear-addition", "residential_addition"),
+        ("sample-commercial-restaurant", "commercial_restaurant"),
+        ("sample-industrial-warehouse", "industrial_warehouse"),
+    ],
+)
+def test_sample_documents_fall_back_to_plan_text(monkeypatch, tmp_path, doc_id, plan_key):
+    """With no fixture files on disk, every sample id still serves its plan text."""
+    from orchestrator.handlers import intake
+
+    monkeypatch.setattr(intake, "_FIXTURES_DIR", tmp_path)
+    monkeypatch.setattr(intake, "_ALT_FIXTURES_DIR", tmp_path)
+    with TestClient(create_app()) as client:
+        resp = client.get(f"/intake/documents/{doc_id}")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "text/plain; charset=utf-8"
+    assert resp.text == intake.SAMPLE_PLANS[plan_key].sample_text
+
+
 def test_incomplete_pdf_still_rejected():
     with TestClient(create_app()) as client:
         resp = client.post("/intake/parse", json={

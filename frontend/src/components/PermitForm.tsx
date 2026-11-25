@@ -1,9 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Permit, SamplePlanInfo, IntakeParseResponse } from '../types';
 import { parseIntakePlan, fetchSamplePlans, fetchSamplePlan } from '../utils/api';
-import { FIXTURE_SCENARIOS } from '../fixtures';
+import {
+  RESIDENTIAL_ADDITION_PERMIT,
+  COMMERCIAL_RESTAURANT_PERMIT,
+  INDUSTRIAL_WAREHOUSE_PERMIT,
+  sampleIntakeResult,
+} from '../fixtures/samplePermits';
 import { EvidenceChip } from './EvidenceChip';
 import { summarizeEvidence } from '../utils/evidence';
+import { parsePlanError, groupMissingFields } from '../utils/errorParser';
 import {
   FileText,
   MapPin,
@@ -29,9 +35,9 @@ interface PermitFormProps {
 }
 
 const FALLBACK_SAMPLE_PERMITS: Record<string, Permit> = {
-  residential_addition: FIXTURE_SCENARIOS.approved.permit,
-  commercial_restaurant: FIXTURE_SCENARIOS.rejected.permit,
-  industrial_warehouse: FIXTURE_SCENARIOS.timeout.permit,
+  residential_addition: RESIDENTIAL_ADDITION_PERMIT,
+  commercial_restaurant: COMMERCIAL_RESTAURANT_PERMIT,
+  industrial_warehouse: INDUSTRIAL_WAREHOUSE_PERMIT,
 };
 
 export const PermitForm: React.FC<PermitFormProps> = ({
@@ -43,12 +49,29 @@ export const PermitForm: React.FC<PermitFormProps> = ({
 }) => {
   // Intake Plan & PDF parsing state (Task T13)
   const [isParsingPlan, setIsParsingPlan] = useState(false);
-  const [intakeResult, setIntakeResult] = useState<IntakeParseResponse | null>(null);
+  // A built-in sample shows its real source file; anything else has no intake result yet.
+  const [intakeResult, setIntakeResult] = useState<IntakeParseResponse | null>(() =>
+    sampleIntakeResult(permit),
+  );
   const [intakeError, setIntakeError] = useState<string | null>(null);
   const [samplePlans, setSamplePlans] = useState<SamplePlanInfo[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const ev = (path: string) => <EvidenceChip span={permit.evidence?.[path]} />;
   const evidenceSummary = summarizeEvidence(permit);
+
+  // Keep the "Source" banner in step with the permit on screen. A parse sets
+  // intakeResult before calling onChange, so its document_id already matches and
+  // is kept; a permit from anywhere else (a demo fixture, another sample) gets its
+  // own sample result, or none.
+  useEffect(() => {
+    setIntakeResult((prev) =>
+      prev && (prev.document_id ?? null) === (permit.source_document_id ?? null)
+        ? prev
+        : sampleIntakeResult(permit),
+    );
+    // Only a change of source document should replace the banner, not field edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permit.source_document_id]);
 
   // Load sample plan catalog on mount
   useEffect(() => {
@@ -160,15 +183,14 @@ export const PermitForm: React.FC<PermitFormProps> = ({
       onChange(res.permit);
     } catch (err: any) {
       const fallbackPermit = FALLBACK_SAMPLE_PERMITS[planId];
-      if (fallbackPermit && (err.message?.includes('404') || err.message?.includes('Failed to fetch sample plan'))) {
+      if (
+        fallbackPermit &&
+        (err.message?.includes('404') ||
+          err.message?.includes('Failed to fetch sample plan') ||
+          err.message === 'Failed to fetch')
+      ) {
         onChange(fallbackPermit);
-        setIntakeResult({
-          permit: fallbackPermit,
-          filename: `${planId}_plan.txt`,
-          file_path: null,
-          extracted_by: 'built-in-fixture-fallback',
-          warnings: [],
-        });
+        setIntakeResult(sampleIntakeResult(fallbackPermit));
         setIntakeError(null);
       } else {
         setIntakeError(err.message || 'Failed to parse sample plan');
@@ -308,21 +330,122 @@ export const PermitForm: React.FC<PermitFormProps> = ({
         </div>
       )}
 
-      {intakeError && (
-        <div className="mx-4 sm:mx-5 mt-4 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-950 flex items-center justify-between shadow-xs">
-          <div className="flex items-center space-x-2.5">
-            <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
-            <span className="font-medium">{intakeError}</span>
+      {intakeError && (() => {
+        const parsed = parsePlanError(intakeError);
+        const grouped = groupMissingFields(parsed.missingFields || []);
+        const categories = Object.keys(grouped);
+        const hasMissingFields = categories.length > 0;
+        const hasInvalidFields = Boolean(parsed.invalidFields && parsed.invalidFields.length > 0);
+
+        const getCategoryIcon = (category: string) => {
+          switch (category) {
+            case 'Zoning & Location':
+              return <MapPin className="h-3.5 w-3.5 text-blue-600 shrink-0" />;
+            case 'Fire Life Safety':
+              return <Flame className="h-3.5 w-3.5 text-rose-600 shrink-0" />;
+            case 'Water & Utilities':
+              return <Droplet className="h-3.5 w-3.5 text-sky-600 shrink-0" />;
+            case 'Structural Engineering':
+              return <Shield className="h-3.5 w-3.5 text-emerald-600 shrink-0" />;
+            case 'Applicant':
+              return <User className="h-3.5 w-3.5 text-purple-600 shrink-0" />;
+            default:
+              return <AlertCircle className="h-3.5 w-3.5 text-amber-600 shrink-0" />;
+          }
+        };
+
+        return (
+          <div className="mx-4 sm:mx-5 mt-4 p-4 sm:p-5 rounded-2xl bg-rose-50/90 border border-rose-200 text-rose-950 shadow-xs space-y-3.5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start space-x-3">
+                <div className="p-2 rounded-xl bg-rose-100 text-rose-700 border border-rose-200/80 shrink-0 mt-0.5 shadow-2xs">
+                  <AlertCircle className="h-4 w-4" />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center space-x-2">
+                    <h4 className="text-xs font-bold text-rose-900 tracking-tight">
+                      {parsed.title}
+                    </h4>
+                    {parsed.missingFields && parsed.missingFields.length > 0 && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-200/80 text-rose-800">
+                        {parsed.missingFields.length} missing
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-rose-800/90 leading-relaxed font-medium">
+                    {parsed.message}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIntakeError(null)}
+                aria-label="Dismiss error"
+                className="apple-press text-rose-400 hover:text-rose-800 text-xs font-bold p-1 rounded-lg hover:bg-rose-100/60 transition-colors shrink-0"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Categorized missing fields grid */}
+            {hasMissingFields && (
+              <div className="pt-2 border-t border-rose-200/60 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {categories.map((cat) => (
+                  <div
+                    key={cat}
+                    className="p-3 rounded-xl bg-white/80 border border-rose-100 shadow-2xs space-y-2"
+                  >
+                    <div className="flex items-center space-x-1.5 text-[11px] font-bold text-rose-900">
+                      {getCategoryIcon(cat)}
+                      <span>{cat}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {grouped[cat].map((f) => (
+                        <span
+                          key={f.path}
+                          title={f.path}
+                          className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium bg-rose-50 text-rose-800 border border-rose-200/60"
+                        >
+                          {f.label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Invalid fields list if present */}
+            {hasInvalidFields && (
+              <div className="pt-2 border-t border-rose-200/60 space-y-1.5">
+                <div className="text-[11px] font-bold text-rose-900">Invalid parameters:</div>
+                <div className="space-y-1">
+                  {parsed.invalidFields?.map((errStr, idx) => (
+                    <div
+                      key={idx}
+                      className="text-[11px] font-mono text-rose-900 bg-white/70 px-2.5 py-1 rounded-lg border border-rose-200/60"
+                    >
+                      {errStr}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Subtle technical error details collapsible */}
+            {parsed.rawMessage && parsed.rawMessage !== parsed.message && (
+              <details className="text-[10px] text-rose-600 pt-1 group">
+                <summary className="cursor-pointer font-semibold select-none text-rose-700 hover:text-rose-900 inline-flex items-center space-x-1">
+                  <span>View raw diagnostic details</span>
+                </summary>
+                <pre className="mt-1.5 p-2 bg-rose-100/50 rounded-lg font-mono text-[10px] text-rose-900 overflow-x-auto whitespace-pre-wrap break-all border border-rose-200/40">
+                  {parsed.rawMessage}
+                </pre>
+              </details>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={() => setIntakeError(null)}
-            className="apple-press text-rose-500 hover:text-rose-800 text-xs font-bold px-1.5 py-0.5 rounded-lg hover:bg-rose-100/50"
-          >
-            ✕
-          </button>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Content: Clean Visual Cards */}
       <div className="p-4 sm:p-5">

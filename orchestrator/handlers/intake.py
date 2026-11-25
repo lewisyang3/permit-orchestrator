@@ -20,7 +20,7 @@ from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, HTTPException, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import ValidationError
 
 from contract.normalize import normalize_state
@@ -1343,13 +1343,57 @@ def _media_type(path: Path) -> str:
     return "text/markdown; charset=utf-8" if suffix == ".md" else "text/plain; charset=utf-8"
 
 
+# Known sample document mappings so sample plans and fixtures can be inspected in the viewer
+_FIXTURES_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "sample_plans"
+_ALT_FIXTURES_DIR = Path("fixtures/sample_plans")
+
+# document_id -> (file in fixtures/sample_plans, media type, SAMPLE_PLANS key).
+# The SAMPLE_PLANS key is stored, not derived from the id: the ids do not map to
+# plan keys by any string rule ("sample-residential-rear-addition" is plan
+# "residential_addition"). Keep in sync with SAMPLE_DOCUMENT_FILENAMES in
+# frontend/src/fixtures/samplePermits.ts.
+_RESIDENTIAL_DOC = ("residential_rear_addition.pdf", "application/pdf", "residential_addition")
+_COMMERCIAL_DOC = ("commercial_restaurant_patio.txt", "text/plain; charset=utf-8", "commercial_restaurant")
+_WAREHOUSE_DOC = ("warehouse_modernization.txt", "text/plain; charset=utf-8", "industrial_warehouse")
+
+SAMPLE_DOCUMENT_FILES: Dict[str, Tuple[str, str, str]] = {
+    "sample-residential-rear-addition": _RESIDENTIAL_DOC,
+    "residential_addition": _RESIDENTIAL_DOC,
+    "sample-residential_addition": _RESIDENTIAL_DOC,
+    "sample-commercial-restaurant": _COMMERCIAL_DOC,
+    "commercial_restaurant": _COMMERCIAL_DOC,
+    "sample-industrial-warehouse": _WAREHOUSE_DOC,
+    "industrial_warehouse": _WAREHOUSE_DOC,
+}
+
+
 @router.get(
     "/documents/{document_id}",
     summary="Download an uploaded plan so a reviewer can check its cited evidence",
     response_class=FileResponse,
 )
-async def get_intake_document(document_id: str) -> FileResponse:
+async def get_intake_document(document_id: str) -> Response:
     """Serve the saved upload for a permit's source_document_id."""
+    # Check if this document_id is one of our built-in sample plans or fixture documents
+    if document_id in SAMPLE_DOCUMENT_FILES:
+        rel_name, mime, plan_key = SAMPLE_DOCUMENT_FILES[document_id]
+        for candidate_dir in (_FIXTURES_DIR, _ALT_FIXTURES_DIR):
+            cand_path = candidate_dir / rel_name
+            if cand_path.is_file():
+                return FileResponse(
+                    cand_path,
+                    media_type=mime,
+                    headers={"Content-Disposition": f'inline; filename="{rel_name}"'},
+                )
+        # Fallback to SAMPLE_PLANS text if file is not on disk
+        if plan_key in SAMPLE_PLANS:
+            info = SAMPLE_PLANS[plan_key]
+            return Response(
+                content=info.sample_text,
+                media_type="text/plain; charset=utf-8",
+                headers={"Content-Disposition": f'inline; filename="{info.filename}"'},
+            )
+
     if not _DOCUMENT_ID.match(document_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     matches = sorted(UPLOADS_DIR.glob(f"{document_id}_*"))

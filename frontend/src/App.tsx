@@ -1,16 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Header, AppTab } from './components/Header';
 import { HeroSection } from './components/HeroSection';
-import { HowItWorks } from './components/HowItWorks';
-import { FeaturesSection } from './components/FeaturesSection';
-import { FixtureSelector } from './components/FixtureSelector';
+import { ForCitiesSection } from './components/ForCitiesSection';
 import { ConsensusBanner } from './components/ConsensusBanner';
 import { TraceWaterfall } from './components/TraceWaterfall';
 import { SpanDetailDrawer } from './components/SpanDetailDrawer';
 import { PermitForm } from './components/PermitForm';
 import { EvidenceProvider } from './components/EvidenceContext';
-import { FaultControlPanel } from './components/FaultControlPanel';
 import { FIXTURE_SCENARIOS, FixtureScenario } from './fixtures';
+import { RESIDENTIAL_ADDITION_PERMIT } from './fixtures/samplePermits';
 import { parseTraceEvents, ParsedSpan } from './utils/traceParser';
 import { evaluatePermitData } from './utils/permitEvaluator';
 import { TraceEvent, Permit } from './types';
@@ -23,16 +21,13 @@ import {
   CheckCircle2,
   FileCheck2,
   Clock,
-  FlaskConical,
-  Zap,
 } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [mode, setMode] = useState<'fixture' | 'live'>('fixture');
   const [activeTab, setActiveTab] = useState<AppTab>('review');
   const [isBackendOnline, setIsBackendOnline] = useState(false);
-  const [selectedScenario, setSelectedScenario] = useState<FixtureScenario>(FIXTURE_SCENARIOS.approved);
-  const [currentPermit, setCurrentPermit] = useState<Permit>(FIXTURE_SCENARIOS.approved.permit);
+  const [currentPermit, setCurrentPermit] = useState<Permit>(RESIDENTIAL_ADDITION_PERMIT);
   const [activeEvents, setActiveEvents] = useState<TraceEvent[]>(FIXTURE_SCENARIOS.approved.events);
   const [selectedSpan, setSelectedSpan] = useState<ParsedSpan | null>(null);
 
@@ -78,25 +73,12 @@ export const App: React.FC = () => {
     }
   }, [activeEvents]);
 
-  // Handle fixture selection
-  const handleSelectScenario = (scenario: FixtureScenario) => {
-    if (simulationTimerRef.current) {
-      clearInterval(simulationTimerRef.current);
-      simulationTimerRef.current = null;
-    }
-    setIsSimulating(false);
-    setSelectedScenario(scenario);
-    setCurrentPermit(scenario.permit);
-    setActiveEvents(scenario.events);
-  };
-
   // Simulate replay of fixture events stream
   const handleSimulateReplay = (scenario: FixtureScenario) => {
     if (simulationTimerRef.current) {
       clearInterval(simulationTimerRef.current);
     }
 
-    setSelectedScenario(scenario);
     setCurrentPermit(scenario.permit);
     setActiveEvents([]);
     setIsSimulating(true);
@@ -263,14 +245,6 @@ export const App: React.FC = () => {
     setMode(newMode);
   };
 
-  // One-click live demo flow: trigger live submission after setting fault mode
-  const handleRunFaultDemo = () => {
-    setMode('live');
-    setTimeout(() => {
-      handleSubmitLive();
-    }, 150);
-  };
-
   return (
     <EvidenceProvider documentId={currentPermit.source_document_id}>
     <div
@@ -302,11 +276,8 @@ export const App: React.FC = () => {
         onSelectDemo={handleSelectDemo}
       />
 
-      {/* How It Works Informational Flow */}
-      <HowItWorks />
-
-      {/* Features & Municipal Benefits */}
-      <FeaturesSection />
+      {/* For Cities & Municipalities Section */}
+      <ForCitiesSection />
 
       {/* Interactive Workbench / Review Application */}
       <main id="app-workbench" className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-16 space-y-6 scroll-mt-20">
@@ -348,32 +319,6 @@ export const App: React.FC = () => {
             >
               <Clock className="h-3.5 w-3.5" />
               <span>Review Timeline</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('fixtures')}
-              className={`apple-press px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-all cursor-pointer ${
-                activeTab === 'fixtures'
-                  ? 'bg-[#1c1d21] text-white shadow-xs'
-                  : 'text-slate-700 hover:text-[#1c1d21] hover:bg-white/60'
-              }`}
-            >
-              <FlaskConical className="h-3.5 w-3.5" />
-              <span>Fixtures</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('diagnostics')}
-              className={`apple-press px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-all cursor-pointer ${
-                activeTab === 'diagnostics'
-                  ? 'bg-[#1c1d21] text-white shadow-xs'
-                  : 'text-slate-700 hover:text-[#1c1d21] hover:bg-white/60'
-              }`}
-            >
-              <Zap className="h-3.5 w-3.5" />
-              <span>Chaos Diagnostics</span>
             </button>
           </div>
         </div>
@@ -488,40 +433,6 @@ export const App: React.FC = () => {
           />
         </div>
 
-        {/* TAB 3: Fixtures (Baseline Testing & Contract Scenarios) */}
-        <div className={`space-y-6 ${activeTab === 'fixtures' ? 'block' : 'hidden'}`}>
-          <div className="bg-white rounded-3xl border border-black/[0.06] p-5 shadow-xs">
-            <h2 className="text-sm font-bold text-[#1c1d21] tracking-tight mb-1">
-              Baseline Test Scenarios
-            </h2>
-            <p className="text-xs text-[#86868b] font-normal">
-              Pre-configured contract scenarios to verify multi-department approval consensus, code violation rejections, and fail-safe timeout guarantees.
-            </p>
-          </div>
-
-          {mode === 'fixture' && (
-            <FixtureSelector
-              selectedId={selectedScenario.id}
-              onSelect={(sc) => {
-                handleSelectScenario(sc);
-              }}
-              onSimulateReplay={handleSimulateReplay}
-              isSimulating={isSimulating}
-              onViewPermitJson={(sc) => {
-                handleSelectScenario(sc);
-                setActiveTab('review');
-              }}
-            />
-          )}
-        </div>
-
-        {/* TAB 4: Chaos Diagnostics (Department container failure modes) */}
-        <div className={`space-y-6 ${activeTab === 'diagnostics' ? 'block' : 'hidden'}`}>
-          <FaultControlPanel
-            onRunFaultDemo={handleRunFaultDemo}
-            isBackendOnline={isBackendOnline}
-          />
-        </div>
       </main>
 
       {/* Side Sheet Drawer for Span Inspection */}
@@ -529,17 +440,14 @@ export const App: React.FC = () => {
 
       {/* Footer matching KISO drafting style */}
       <footer className="border-t border-[#1c1d21]/15 py-10 bg-white/40 mt-16 text-center text-xs text-slate-500 font-mono">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center space-x-2">
-            <img
-              src="/assets/kiso_logo_icon.png"
-              alt="KISO"
-              className="h-5 w-5 object-contain mix-blend-multiply"
-            />
-            <span className="font-extrabold text-[#1c1d21] font-sans">KISO</span>
-            <span>— Automated Municipal Permit Review Architecture</span>
-          </div>
-          <div>Distributed Sagas &bull; Unanimous Municipal Verification &bull; UC Berkeley x Google DeepMind</div>
+        <div className="max-w-7xl mx-auto px-4 flex items-center justify-center space-x-2">
+          <img
+            src="/assets/kiso_logo_icon.png"
+            alt="KISO"
+            className="h-5 w-5 object-contain mix-blend-multiply"
+          />
+          <span className="font-extrabold text-[#1c1d21] font-sans">KISO</span>
+          <span>— Automated Municipal Permit Review Architecture</span>
         </div>
       </footer>
     </div>
